@@ -15,5 +15,5 @@ env:
 resources:
   - name: sql-warehouse
     sql_warehouse:
-      id: "341dd90e60e79ffc"
+      id: "2d0a20c121efb7e5"
       permission: CAN_USE

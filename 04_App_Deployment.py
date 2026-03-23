@@ -100,7 +100,7 @@ print(f"Workspace path: {WORKSPACE_APP_PATH}")
 # MAGIC   - name: lakebase
 # MAGIC     description: Lakebase database for OLTP operations
 # MAGIC     sql_warehouse:
-# MAGIC       id: "341dd90e60e79ffc"
+# MAGIC       id: "2d0a20c121efb7e5"
 # MAGIC       permission: CAN_USE
 # MAGIC ```
 
@@ -141,7 +141,7 @@ app_config = {
             "name": "lakebase",
             "description": "Lakebase database",
             "sql_warehouse": {
-                "id": "341dd90e60e79ffc",
+                "id": "2d0a20c121efb7e5",
                 "permission": "CAN_USE"
             }
         }

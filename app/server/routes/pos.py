@@ -23,7 +23,7 @@ async def get_po(ebeln: str):
     items = await db_pool.fetch(
         """
         SELECT "EBELN", "EBELP", "MATNR", "WERKS", "MENGE", "MEINS", "NETPR", "ELIKZ"
-        FROM ekpo_enriched WHERE "EBELN" = $1 AND ("LOEKZ" IS NULL OR "LOEKZ" != 'X')
+        FROM ekpo_enriched WHERE "EBELN" = $1
         ORDER BY "EBELP"
     """,
         ebeln,

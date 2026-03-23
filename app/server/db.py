@@ -1,9 +1,5 @@
-import asyncio
 import asyncpg
 import logging
-import subprocess
-import json
-import os
 from server.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -17,6 +13,10 @@ class LakebasePool:
         self._config = get_config()
         self._host: str | None = None
         self._email: str | None = None
+
+    @property
+    def is_connected(self) -> bool:
+        return self._pool is not None
 
     async def initialize(self):
         """Initialize the connection pool."""
@@ -51,8 +51,15 @@ class LakebasePool:
             await self._pool.close()
         await self.initialize()
 
+    def _ensure_pool(self):
+        if not self._pool:
+            raise RuntimeError(
+                "Database not connected. Lakebase pool was not initialized."
+            )
+
     async def fetch(self, query: str, *args):
         """Execute a query and return all rows."""
+        self._ensure_pool()
         try:
             async with self._pool.acquire() as conn:
                 return await conn.fetch(query, *args)
@@ -63,6 +70,7 @@ class LakebasePool:
 
     async def fetchrow(self, query: str, *args):
         """Execute a query and return a single row."""
+        self._ensure_pool()
         try:
             async with self._pool.acquire() as conn:
                 return await conn.fetchrow(query, *args)
@@ -73,6 +81,7 @@ class LakebasePool:
 
     async def execute(self, query: str, *args):
         """Execute a query without returning results."""
+        self._ensure_pool()
         try:
             async with self._pool.acquire() as conn:
                 return await conn.execute(query, *args)

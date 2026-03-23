@@ -4,6 +4,19 @@ from server.db import db_pool
 router = APIRouter(tags=["purchase-orders"])
 
 
+@router.get("/pos/numbers")
+async def list_po_numbers():
+    """List all PO numbers with vendor info for dropdown selection."""
+    rows = await db_pool.fetch(
+        """
+        SELECT "EBELN", "LIFNR", "BEDAT"::text, "BSART"
+        FROM ekko
+        ORDER BY "BEDAT" DESC, "EBELN"
+    """
+    )
+    return [dict(r) for r in rows]
+
+
 @router.get("/pos/{ebeln}")
 async def get_po(ebeln: str):
     """Get PO header and items by PO number."""

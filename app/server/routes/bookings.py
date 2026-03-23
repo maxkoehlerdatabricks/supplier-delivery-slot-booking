@@ -162,25 +162,27 @@ async def update_booking_status(booking_id: int, update: StatusUpdate):
 async def get_booking_stats():
     """Get booking statistics for the dashboard."""
     status_counts = await db_pool.fetch(
-        """
-        SELECT status, COUNT(*) as count FROM delivery_booking GROUP BY status ORDER BY status
-    """
+        "SELECT status, COUNT(*) as count FROM delivery_booking GROUP BY status"
     )
+    counts = {r["status"]: r["count"] for r in status_counts}
+    total = sum(counts.values())
 
     today_utilization = await db_pool.fetch(
         """
-        SELECT dock_id, slot_date, time_window_start::text, time_window_end::text,
-               capacity, reserved_count
+        SELECT dock_id, SUM(reserved_count) as used, SUM(capacity) as total
         FROM dock_slot
         WHERE slot_date = CURRENT_DATE
-        ORDER BY dock_id, time_window_start
+        GROUP BY dock_id
+        ORDER BY dock_id
     """
     )
 
     recent = await db_pool.fetch(
         """
-        SELECT b.booking_id, b.po_number, b.vendor_id, b.status, b.updated_at,
-               s.dock_id, s.slot_date
+        SELECT b.booking_id as id, b.booking_id, b.po_number, b.vendor_id, b.status,
+               b.created_at,
+               s.dock_id as dock_name, s.slot_date,
+               s.time_window_start::text || ' - ' || s.time_window_end::text as time_window
         FROM delivery_booking b
         JOIN dock_slot s ON b.slot_id = s.slot_id
         ORDER BY b.updated_at DESC
@@ -189,7 +191,15 @@ async def get_booking_stats():
     )
 
     return {
-        "status_counts": [dict(r) for r in status_counts],
-        "today_utilization": [dict(r) for r in today_utilization],
+        "total_bookings": total,
+        "requested": counts.get("requested", 0),
+        "confirmed": counts.get("confirmed", 0),
+        "checked_in": counts.get("checked_in", 0),
+        "completed": counts.get("completed", 0),
+        "cancelled": counts.get("cancelled", 0),
+        "today_slots": [
+            {"dock_id": r["dock_id"], "dock_name": r["dock_id"], "used": r["used"], "total": r["total"]}
+            for r in today_utilization
+        ],
         "recent_bookings": [dict(r) for r in recent],
     }

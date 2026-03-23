@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface SelectedSlot {
   id: number
@@ -22,11 +22,38 @@ interface BookingFormProps {
   submitting: boolean
 }
 
+interface POEntry {
+  EBELN: string
+  LIFNR: string
+  BEDAT: string
+  BSART: string
+}
+
 export default function BookingForm({ selectedSlot, onSubmit, onCancel, submitting }: BookingFormProps) {
-  const [vendorId, setVendorId] = useState('')
+  const [poList, setPoList] = useState<POEntry[]>([])
   const [poNumber, setPoNumber] = useState('')
+  const [vendorId, setVendorId] = useState('')
   const [truckPlate, setTruckPlate] = useState('')
   const [driverName, setDriverName] = useState('')
+  const [loadingPOs, setLoadingPOs] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/pos/numbers')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setPoList(Array.isArray(data) ? data : []))
+      .catch(() => setPoList([]))
+      .finally(() => setLoadingPOs(false))
+  }, [])
+
+  const handlePoChange = (ebeln: string) => {
+    setPoNumber(ebeln)
+    const po = poList.find(p => p.EBELN === ebeln)
+    if (po) {
+      setVendorId(po.LIFNR)
+    } else {
+      setVendorId('')
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,6 +71,10 @@ export default function BookingForm({ selectedSlot, onSubmit, onCancel, submitti
     'w-full bg-mercedes-black border border-mercedes-gray/40 rounded-lg px-4 py-2.5 text-mercedes-light text-sm ' +
     'placeholder:text-mercedes-gray focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-all duration-200'
 
+  const selectClass =
+    'w-full bg-mercedes-black border border-mercedes-gray/40 rounded-lg px-4 py-2.5 text-mercedes-light text-sm ' +
+    'focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-all duration-200 appearance-none'
+
   const labelClass = 'block text-xs font-medium text-mercedes-silver mb-1.5'
 
   return (
@@ -58,17 +89,31 @@ export default function BookingForm({ selectedSlot, onSubmit, onCancel, submitti
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>
-              PO Number <span className="text-red-400">*</span>
+              Purchase Order <span className="text-red-400">*</span>
             </label>
-            <input
-              type="text"
-              className={inputClass}
-              placeholder="e.g. 4500000123"
-              value={poNumber}
-              onChange={e => setPoNumber(e.target.value)}
-              required
-              disabled={submitting}
-            />
+            <div className="relative">
+              <select
+                className={selectClass}
+                value={poNumber}
+                onChange={e => handlePoChange(e.target.value)}
+                required
+                disabled={submitting || loadingPOs}
+              >
+                <option value="">
+                  {loadingPOs ? 'Loading POs...' : 'Select a Purchase Order'}
+                </option>
+                {poList.map(po => (
+                  <option key={po.EBELN} value={po.EBELN}>
+                    {po.EBELN} — {po.LIFNR} ({po.BEDAT})
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <svg className="h-4 w-4 text-mercedes-silver" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
           </div>
           <div>
             <label className={labelClass}>
@@ -76,12 +121,11 @@ export default function BookingForm({ selectedSlot, onSubmit, onCancel, submitti
             </label>
             <input
               type="text"
-              className={inputClass}
-              placeholder="e.g. VEND001"
+              className={inputClass + ' bg-mercedes-black/60'}
               value={vendorId}
-              onChange={e => setVendorId(e.target.value)}
+              readOnly
+              placeholder="Auto-filled from PO"
               required
-              disabled={submitting}
             />
           </div>
         </div>

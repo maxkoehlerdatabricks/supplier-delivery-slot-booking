@@ -20,7 +20,6 @@ async def list_po_numbers():
 @router.get("/pos/{ebeln}")
 async def get_po(ebeln: str):
     """Get PO header and items by PO number."""
-    # Get PO header from synced ekko table
     header = await db_pool.fetchrow(
         """
         SELECT "EBELN", "BUKRS", "EKORG", "BEDAT", "LIFNR", "BSART"
@@ -32,7 +31,6 @@ async def get_po(ebeln: str):
     if not header:
         raise HTTPException(status_code=404, detail=f"PO {ebeln} not found")
 
-    # Get PO items from synced ekpo_enriched table
     items = await db_pool.fetch(
         """
         SELECT "EBELN", "EBELP", "MATNR", "WERKS", "MENGE", "MEINS", "NETPR", "ELIKZ"
@@ -42,9 +40,31 @@ async def get_po(ebeln: str):
         ebeln,
     )
 
+    total_value = sum(float(i["MENGE"] or 0) * float(i["NETPR"] or 0) for i in items)
+
     return {
-        "header": dict(header),
-        "items": [dict(i) for i in items],
+        "ebeln": header["EBELN"],
+        "lifnr": header["LIFNR"],
+        "ekorg": header["EKORG"],
+        "bsart": header["BSART"],
+        "bedat": str(header["BEDAT"]),
+        "status": "Active",
+        "total_value": round(total_value, 2),
+        "waers": "EUR",
+        "items": [
+            {
+                "ebeln": i["EBELN"],
+                "ebelp": i["EBELP"],
+                "matnr": i["MATNR"],
+                "maktx": i["MATNR"],
+                "menge": float(i["MENGE"] or 0),
+                "meins": i["MEINS"] or "EA",
+                "netpr": float(i["NETPR"] or 0),
+                "waers": "EUR",
+                "werks": i["WERKS"],
+            }
+            for i in items
+        ],
     }
 
 

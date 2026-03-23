@@ -63,10 +63,11 @@ async def get_bookings(
 ):
     """Search bookings by PO number, vendor, status, or date."""
     query = """
-        SELECT b.booking_id, b.slot_id, b.vendor_id, b.po_number,
+        SELECT b.booking_id as id, b.booking_id, b.slot_id, b.vendor_id, b.po_number,
                b.truck_plate, b.driver_name, b.status,
                b.created_at, b.updated_at,
-               s.dock_id, s.slot_date, s.time_window_start::text, s.time_window_end::text
+               s.dock_id as dock_name, s.slot_date,
+               s.time_window_start::text || ' - ' || s.time_window_end::text as time_window
         FROM delivery_booking b
         JOIN dock_slot s ON b.slot_id = s.slot_id
         WHERE 1=1
@@ -102,7 +103,10 @@ async def get_booking(booking_id: int):
     """Get a single booking by ID."""
     row = await db_pool.fetchrow(
         """
-        SELECT b.*, s.dock_id, s.slot_date, s.time_window_start::text, s.time_window_end::text
+        SELECT b.booking_id as id, b.booking_id, b.slot_id, b.vendor_id, b.po_number,
+               b.truck_plate, b.driver_name, b.status, b.created_at, b.updated_at,
+               s.dock_id as dock_name, s.slot_date,
+               s.time_window_start::text || ' - ' || s.time_window_end::text as time_window
         FROM delivery_booking b
         JOIN dock_slot s ON b.slot_id = s.slot_id
         WHERE b.booking_id = $1

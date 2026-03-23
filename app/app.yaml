@@ -6,12 +6,23 @@ command:
 env:
   - name: LAKEBASE_PROJECT
     value: "delivery-slot-booking"
-  - name: LAKEBASE_DB
-    value: "delivery_app"
   - name: LAKEBASE_BRANCH
     value: "production"
   - name: LAKEBASE_ENDPOINT
     value: "primary"
+  - name: PGHOST
+    value: "ep-purple-lab-d2omfjz6.database.us-east-1.cloud.databricks.com"
+  - name: PGDATABASE
+    value: "delivery_app"
+  - name: PGUSER
+    value: "d6f3f50d-2b7b-4545-83ba-6213f7e45299"
+  - name: PGPORT
+    value: "5432"
+  - name: PGSSLMODE
+    value: "require"
+  - name: PGPASSWORD
+    valueFrom:
+      pg-secret
 resources:
   - name: sql-warehouse
     sql_warehouse:

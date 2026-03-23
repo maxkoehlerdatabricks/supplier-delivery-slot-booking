@@ -10,20 +10,23 @@ logger = logging.getLogger(__name__)
 class Config:
     """Configuration for Lakebase connection with dual-mode auth.
 
-    - **App mode** (DATABRICKS_APP_NAME set): uses the Databricks Python SDK
-      which auto-authenticates via the service principal injected by the runtime.
-    - **Local mode**: shells out to `databricks` CLI with the configured profile.
+    - **App mode** (PGHOST set): uses PG* env vars with native Postgres
+      password auth via a Databricks secret.
+    - **Local mode**: shells out to `databricks` CLI for OAuth tokens.
     """
 
     def __init__(self):
         self.project = os.getenv("LAKEBASE_PROJECT", "delivery-slot-booking")
-        self.db_name = os.getenv("LAKEBASE_DB", "delivery_app")
+        self.db_name = os.getenv("PGDATABASE", os.getenv("LAKEBASE_DB", "delivery_app"))
         self.branch = os.getenv("LAKEBASE_BRANCH", "production")
         self.endpoint = os.getenv("LAKEBASE_ENDPOINT", "primary")
         self.profile = os.getenv(
             "DATABRICKS_PROFILE", "fe-vm-fevm-serverless-stable-nyu9oz"
         )
-        self._is_app_mode = os.getenv("DATABRICKS_APP_NAME") is not None
+        self._pg_host = os.getenv("PGHOST")
+        self._pg_user = os.getenv("PGUSER")
+        self._pg_password = os.getenv("PGPASSWORD")
+        self._is_app_mode = self._pg_host is not None
 
     @property
     def is_app_mode(self) -> bool:
@@ -32,43 +35,16 @@ class Config:
     def get_db_host(self) -> str:
         """Get Lakebase endpoint host."""
         if self._is_app_mode:
-            return self._get_db_host_sdk()
+            logger.info(f"App mode: using PGHOST={self._pg_host}")
+            return self._pg_host
         return self._get_db_host_cli()
 
     def get_db_credentials(self) -> tuple[str, str]:
-        """Get OAuth token and user email for Lakebase connection."""
+        """Get password/token and username for Lakebase connection."""
         if self._is_app_mode:
-            return self._get_credentials_sdk()
+            logger.info(f"App mode: using native password auth as {self._pg_user}")
+            return self._pg_password, self._pg_user
         return self._get_credentials_cli()
-
-    # ── SDK mode (Databricks App) ────────────────────────────────
-
-    def _get_db_host_sdk(self) -> str:
-        from databricks.sdk import WorkspaceClient
-
-        w = WorkspaceClient()
-        branch_path = f"projects/{self.project}/branches/{self.branch}"
-        resp = w.api_client.do("GET", f"/api/2.0/databases/postgres/{branch_path}/endpoints")
-        endpoints = resp.get("endpoints", []) if isinstance(resp, dict) else []
-        if not endpoints:
-            raise RuntimeError("No Lakebase endpoints found via SDK")
-        return endpoints[0]["status"]["hosts"]["host"]
-
-    def _get_credentials_sdk(self) -> tuple[str, str]:
-        from databricks.sdk import WorkspaceClient
-
-        w = WorkspaceClient()
-        endpoint_path = (
-            f"projects/{self.project}/branches/{self.branch}"
-            f"/endpoints/{self.endpoint}"
-        )
-        resp = w.api_client.do(
-            "POST",
-            f"/api/2.0/databases/postgres/{endpoint_path}:generateCredential",
-        )
-        token = resp["token"]
-        email = w.current_user.me().user_name
-        return token, email
 
     # ── CLI mode (local development) ─────────────────────────────
 

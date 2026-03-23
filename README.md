@@ -213,6 +213,7 @@ supplier-delivery-slot-booking/
 ├── 02_Lakebase_Setup.py                # Create Lakebase project & tables
 ├── 03_Data_Exploration.py              # Data visualizations
 ├── 04_App_Deployment.py                # Deploy Databricks App
+├── 05_Cleanup.py                       # Delete all demo resources
 └── app/                                # Web application
     ├── app.yaml                        # Databricks App config
     ├── app.py                          # FastAPI entry point
@@ -261,6 +262,23 @@ npm run dev
 ```
 
 The frontend dev server proxies API calls to `localhost:8000`.
+
+---
+
+## Cleanup
+
+To delete **all demo resources** (app, Lakebase project, warehouse, secret scope, Delta tables, schema) while keeping the catalog intact, run:
+
+**`05_Cleanup.py`** — Import into your workspace and run all cells sequentially.
+
+This deletes:
+- Databricks App (`delivery-slot-booking`)
+- Lakebase project and all data (`delivery-slot-booking`)
+- Secret scope (`delivery-slot-booking`)
+- SQL Warehouse (`delivery-slot-booking-warehouse`)
+- All Delta tables and the schema
+
+To re-deploy after cleanup, re-run the notebooks starting from `_helper/01_generate_sap_data.py`.
 
 ---
 

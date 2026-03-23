@@ -13,10 +13,10 @@ async def get_slots(
 ):
     """Get available delivery slots. Optionally filter by date and dock."""
     query = """
-        SELECT slot_id, dock_id, plant_id, slot_date,
-               time_window_start::text, time_window_end::text,
-               capacity, reserved_count,
-               (capacity - reserved_count) as available
+        SELECT slot_id as id, dock_id, dock_id as dock_name, plant_id, slot_date,
+               time_window_start::text || ' - ' || time_window_end::text as time_window,
+               capacity as max_capacity, reserved_count as current_bookings,
+               (capacity - reserved_count > 0) as is_available
         FROM dock_slot
         WHERE plant_id = $1
     """

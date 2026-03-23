@@ -1,0 +1,19 @@
+command:
+  - uvicorn
+  - app:app
+  - --workers
+  - "4"
+env:
+  - name: LAKEBASE_PROJECT
+    value: "delivery-slot-booking"
+  - name: LAKEBASE_DB
+    value: "delivery_app"
+  - name: LAKEBASE_BRANCH
+    value: "production"
+  - name: LAKEBASE_ENDPOINT
+    value: "primary"
+resources:
+  - name: sql-warehouse
+    sql_warehouse:
+      id: "341dd90e60e79ffc"
+      permission: CAN_USE

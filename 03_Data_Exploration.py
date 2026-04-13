@@ -19,7 +19,7 @@
 
 from pyspark.sql import functions as F
 
-CATALOG = "serverless_stable_nyu9oz_catalog"
+CATALOG = "classic_stable_4rp118_catalog"
 SCHEMA = "delivery_slot_booking_ppmaxkohler"
 FULL_SCHEMA = f"{CATALOG}.{SCHEMA}"
 

@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "1"
+# ///
 # MAGIC %md
 # MAGIC # Lakebase Setup
 # MAGIC
@@ -33,18 +37,33 @@ import json
 import os
 import time
 
-CATALOG = "serverless_stable_nyu9oz_catalog"
+CATALOG = "classic_stable_4rp118_catalog"
 SCHEMA = "delivery_slot_booking_ppmaxkohler"
 FULL_SCHEMA = f"{CATALOG}.{SCHEMA}"
 
-PROFILE = "fe-vm-fevm-serverless-stable-nyu9oz"
 PROJECT = "delivery-slot-booking"
 DB_NAME = "delivery_app"
 
-print(f"Profile:  {PROFILE}")
 print(f"Project:  {PROJECT}")
 print(f"Database: {DB_NAME}")
 print(f"Schema:   {FULL_SCHEMA}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Delete Lakebase Project
+# Delete the Lakebase project (safe to run if it doesn't exist)
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
+
+w = WorkspaceClient()
+
+try:
+    w.api_client.do("DELETE", f"/api/2.0/postgres/projects/{PROJECT}")
+    print(f"Project '{PROJECT}' deleted successfully.")
+except NotFound:
+    print(f"Project '{PROJECT}' does not exist - nothing to delete.")
+
+print("\nWorkspace is clean. Ready to run from Step 1.")
 
 # COMMAND ----------
 
@@ -53,12 +72,29 @@ print(f"Schema:   {FULL_SCHEMA}")
 
 # COMMAND ----------
 
-result = subprocess.run([
-    "databricks", "postgres", "create-project", PROJECT,
-    "--json", json.dumps({"spec": {"display_name": "Delivery Slot Booking"}}),
-    "--no-wait", "-p", PROFILE
-], capture_output=True, text=True)
-print(result.stdout or result.stderr)
+# DBTITLE 1,Create Lakebase Project
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import BadRequest
+
+w = WorkspaceClient()
+
+try:
+    response = w.api_client.do(
+        "POST",
+        f"/api/2.0/postgres/projects?project_id={PROJECT}",
+        body={
+            "spec": {
+                "display_name": "Delivery Slot Booking"
+            }
+        }
+    )
+    print(f"Project '{PROJECT}' creation initiated.")
+    print(response)
+except BadRequest as e:
+    if "already exists" in str(e):
+        print(f"Project '{PROJECT}' already exists - continuing.")
+    else:
+        raise
 
 # COMMAND ----------
 
@@ -69,25 +105,31 @@ print(result.stdout or result.stderr)
 
 # COMMAND ----------
 
+# DBTITLE 1,Wait for Project Ready
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient()
+
 MAX_WAIT_SECONDS = 300
 POLL_INTERVAL = 15
 
 for attempt in range(MAX_WAIT_SECONDS // POLL_INTERVAL):
-    result = subprocess.run([
-        "databricks", "postgres", "get-project", PROJECT,
-        "-p", PROFILE, "-o", "json"
-    ], capture_output=True, text=True)
-
-    if result.returncode == 0:
-        project_info = json.loads(result.stdout)
-        status = project_info.get("status", {}).get("state", "UNKNOWN")
-        print(f"Attempt {attempt + 1}: Project status = {status}")
-
-        if status in ("ACTIVE", "READY", "STATE_ACTIVE"):
-            print("Project is ready!")
-            break
-    else:
-        print(f"Attempt {attempt + 1}: {result.stderr.strip()}")
+    try:
+        response = w.api_client.do(
+            "GET",
+            f"/api/2.0/postgres/projects/{PROJECT}/branches/production/endpoints"
+        )
+        endpoints = response.get("endpoints", [])
+        if endpoints:
+            status = endpoints[0].get("status", {}).get("current_state", "UNKNOWN")
+            print(f"Attempt {attempt + 1}: Endpoint status = {status}")
+            if status == "ACTIVE":
+                print("Project is ready!")
+                break
+        else:
+            print(f"Attempt {attempt + 1}: No endpoints found yet...")
+    except Exception as e:
+        print(f"Attempt {attempt + 1}: {e}")
 
     time.sleep(POLL_INTERVAL)
 else:
@@ -102,37 +144,32 @@ else:
 
 # COMMAND ----------
 
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient()
+
 def get_connection_details(branch="production", endpoint="primary"):
     """Get Lakebase connection details for the specified branch and endpoint."""
     # Get host
-    result = subprocess.run([
-        "databricks", "postgres", "list-endpoints",
-        f"projects/{PROJECT}/branches/{branch}",
-        "-p", PROFILE, "-o", "json"
-    ], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to list endpoints: {result.stderr}")
-    endpoints = json.loads(result.stdout)
+    response = w.api_client.do(
+        "GET",
+        f"/api/2.0/postgres/projects/{PROJECT}/branches/{branch}/endpoints"
+    )
+    endpoints = response.get("endpoints", [])
+    if not endpoints:
+        raise RuntimeError(f"No endpoints found for branch '{branch}'")
     host = endpoints[0]["status"]["hosts"]["host"]
 
     # Get token
-    result = subprocess.run([
-        "databricks", "postgres", "generate-database-credential",
-        f"projects/{PROJECT}/branches/{branch}/endpoints/{endpoint}",
-        "-p", PROFILE, "-o", "json"
-    ], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to generate credential: {result.stderr}")
-    token = json.loads(result.stdout)["token"]
+    response = w.api_client.do(
+        "POST",
+        "/api/2.0/postgres/credentials",
+        body={"endpoint": f"projects/{PROJECT}/branches/{branch}/endpoints/{endpoint}"}
+    )
+    token = response["token"]
 
     # Get email
-    result = subprocess.run([
-        "databricks", "current-user", "me",
-        "-p", PROFILE, "-o", "json"
-    ], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to get current user: {result.stderr}")
-    email = json.loads(result.stdout)["userName"]
+    email = w.current_user.me().user_name
 
     print(f"Host:  {host}")
     print(f"User:  {email}")
@@ -149,15 +186,23 @@ host, token, email = get_connection_details()
 
 # COMMAND ----------
 
-result = subprocess.run([
-    "psql", f"host={host} port=5432 dbname=postgres user={email} sslmode=require",
-    "-c", f"CREATE DATABASE {DB_NAME};"
-], env={**os.environ, "PGPASSWORD": token}, capture_output=True, text=True)
+import psycopg2
 
-if "already exists" in (result.stderr or ""):
+conn = psycopg2.connect(
+    host=host, port=5432, dbname="postgres",
+    user=email, password=token, sslmode="require"
+)
+conn.autocommit = True
+cur = conn.cursor()
+
+try:
+    cur.execute(f"CREATE DATABASE {DB_NAME};")
+    print(f"Database '{DB_NAME}' created.")
+except psycopg2.errors.DuplicateDatabase:
     print(f"Database '{DB_NAME}' already exists - continuing.")
-else:
-    print(result.stdout or result.stderr)
+finally:
+    cur.close()
+    conn.close()
 
 # COMMAND ----------
 
@@ -196,11 +241,18 @@ CREATE TABLE IF NOT EXISTS delivery_booking (
 );
 """
 
-result = subprocess.run([
-    "psql", f"host={host} port=5432 dbname={DB_NAME} user={email} sslmode=require",
-    "-c", DDL_SQL
-], env={**os.environ, "PGPASSWORD": token}, capture_output=True, text=True)
-print(result.stdout or result.stderr)
+import psycopg2
+
+conn = psycopg2.connect(
+    host=host, port=5432, dbname=DB_NAME,
+    user=email, password=token, sslmode="require"
+)
+conn.autocommit = True
+cur = conn.cursor()
+cur.execute(DDL_SQL)
+print("Tables 'dock_slot' and 'delivery_booking' created.")
+cur.close()
+conn.close()
 
 # COMMAND ----------
 
@@ -271,15 +323,41 @@ print("Data load complete.")
 
 # Sync ekko and ekpo_enriched from Delta Lake to Lakebase
 # This creates read-only replicas in Lakebase for low-latency PO lookups
-for table_name in ["ekko", "ekpo_enriched"]:
-    result = subprocess.run([
-        "databricks", "database", "create-synced-database-table",
-        f"{CATALOG}.{SCHEMA}.{table_name}",
-        "--database-instance-name", PROJECT,
-        "--logical-database-name", DB_NAME,
-        "-p", PROFILE
-    ], capture_output=True, text=True)
-    print(f"Syncing {table_name}: {result.stdout or result.stderr}")
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import BadRequest
+
+w = WorkspaceClient()
+
+tables_to_sync = {
+    "ekko": ["EBELN"],
+    "ekpo_enriched": ["EBELN", "EBELP"],
+}
+
+for table_name, pk_cols in tables_to_sync.items():
+    full_table = f"{CATALOG}.{SCHEMA}.{table_name}"
+    try:
+        response = w.api_client.do(
+            "POST",
+            f"/api/2.0/postgres/synced_tables?synced_table_id={full_table}",
+            body={
+                "spec": {
+                    "source_table_full_name": full_table,
+                    "project": f"projects/{PROJECT}",
+                    "branch": f"projects/{PROJECT}/branches/production",
+                    "primary_key_columns": pk_cols,
+                    "scheduling_policy": "TRIGGERED",
+                    "postgres_database": DB_NAME,
+                    "create_database_objects_if_missing": True
+                }
+            }
+        )
+        print(f"Syncing {table_name}: initiated")
+        print(f"  Operation: {response.get('name', response)}")
+    except BadRequest as e:
+        if "already exists" in str(e).lower():
+            print(f"Syncing {table_name}: already synced - continuing.")
+        else:
+            raise
 
 # COMMAND ----------
 
@@ -291,17 +369,29 @@ for table_name in ["ekko", "ekpo_enriched"]:
 
 # COMMAND ----------
 
-result = subprocess.run([
-    "databricks", "postgres", "create-branch", f"projects/{PROJECT}", "dev",
-    "--json", json.dumps({
-        "spec": {
-            "source_branch": f"projects/{PROJECT}/branches/production",
-            "no_expiry": True
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import BadRequest
+
+w = WorkspaceClient()
+
+try:
+    response = w.api_client.do(
+        "POST",
+        f"/api/2.0/postgres/projects/{PROJECT}/branches?branch_id=dev",
+        body={
+            "spec": {
+                "source_branch": f"projects/{PROJECT}/branches/production",
+                "no_expiry": True
+            }
         }
-    }),
-    "-p", PROFILE
-], capture_output=True, text=True)
-print(result.stdout or result.stderr)
+    )
+    print(f"Dev branch creation initiated.")
+    print(response)
+except BadRequest as e:
+    if "already exists" in str(e).lower():
+        print("Dev branch already exists - continuing.")
+    else:
+        raise
 
 # COMMAND ----------
 
@@ -312,18 +402,30 @@ print(result.stdout or result.stderr)
 
 # COMMAND ----------
 
-result = subprocess.run([
-    "databricks", "postgres", "create-endpoint", f"projects/{PROJECT}/branches/dev", "read-write",
-    "--json", json.dumps({
-        "spec": {
-            "endpoint_type": "ENDPOINT_TYPE_READ_WRITE",
-            "autoscaling_limit_min_cu": 0.5,
-            "autoscaling_limit_max_cu": 2.0
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import BadRequest
+
+w = WorkspaceClient()
+
+try:
+    response = w.api_client.do(
+        "POST",
+        f"/api/2.0/postgres/projects/{PROJECT}/branches/dev/endpoints?endpoint_id=read-write",
+        body={
+            "spec": {
+                "endpoint_type": "ENDPOINT_TYPE_READ_WRITE",
+                "autoscaling_limit_min_cu": 0.5,
+                "autoscaling_limit_max_cu": 2.0
+            }
         }
-    }),
-    "-p", PROFILE
-], capture_output=True, text=True)
-print(result.stdout or result.stderr)
+    )
+    print("Dev branch read-write endpoint creation initiated.")
+    print(response)
+except BadRequest as e:
+    if "already exists" in str(e).lower():
+        print("Dev branch read-write endpoint already exists - continuing.")
+    else:
+        raise
 
 # COMMAND ----------
 
@@ -331,6 +433,8 @@ print(result.stdout or result.stderr)
 # MAGIC ## Step 10: Verify Tables on Both Branches
 
 # COMMAND ----------
+
+import psycopg2
 
 def verify_branch(branch_name, endpoint="primary"):
     """Verify tables exist and contain data on a given branch."""
@@ -340,22 +444,28 @@ def verify_branch(branch_name, endpoint="primary"):
 
     try:
         h, t, e = get_connection_details(branch=branch_name, endpoint=endpoint)
-        result = subprocess.run([
-            "psql", f"host={h} port=5432 dbname={DB_NAME} user={e} sslmode=require",
-            "-c", "SELECT 'dock_slot' as tbl, COUNT(*) as cnt FROM dock_slot UNION ALL SELECT 'delivery_booking', COUNT(*) FROM delivery_booking;"
-        ], env={**os.environ, "PGPASSWORD": t}, capture_output=True, text=True)
-        print(result.stdout or result.stderr)
+        conn = psycopg2.connect(
+            host=h, port=5432, dbname=DB_NAME,
+            user=e, password=t, sslmode="require"
+        )
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 'dock_slot' AS tbl, COUNT(*) AS cnt FROM dock_slot
+            UNION ALL
+            SELECT 'delivery_booking', COUNT(*) FROM delivery_booking;
+        """)
+        for row in cur.fetchall():
+            print(f"  {row[0]}: {row[1]} rows")
+        cur.close()
+        conn.close()
     except Exception as ex:
-        print(f"Could not verify branch '{branch_name}': {ex}")
+        print(f"  Could not verify branch '{branch_name}': {ex}")
 
 # Verify production
 verify_branch("production")
 
 # Verify dev (endpoint may still be provisioning)
-try:
-    verify_branch("dev", endpoint="read-write")
-except Exception as ex:
-    print(f"Dev branch not ready yet: {ex}")
+verify_branch("dev", endpoint="read-write")
 
 # COMMAND ----------
 

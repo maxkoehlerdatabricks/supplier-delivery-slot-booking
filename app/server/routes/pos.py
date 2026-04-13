@@ -4,16 +4,37 @@ from server.db import db_pool
 router = APIRouter(tags=["purchase-orders"])
 
 
-@router.get("/pos/numbers")
-async def list_po_numbers():
-    """List all PO numbers with vendor info for dropdown selection."""
+@router.get("/pos/vendors")
+async def list_vendors():
+    """List distinct vendor IDs for dropdown selection."""
     rows = await db_pool.fetch(
         """
-        SELECT "EBELN", "LIFNR", "BEDAT"::text, "BSART"
+        SELECT DISTINCT "LIFNR"
         FROM ekko
-        ORDER BY "BEDAT" DESC, "EBELN"
+        ORDER BY "LIFNR"
     """
     )
+    return [r["LIFNR"] for r in rows]
+
+
+@router.get("/pos/numbers")
+async def list_po_numbers(
+    vendor_id: str | None = Query(default=None),
+):
+    """List PO numbers with vendor info for dropdown selection.
+    Optionally filter by vendor_id.
+    """
+    query = """
+        SELECT "EBELN", "LIFNR", "BEDAT"::text, "BSART"
+        FROM ekko
+    """
+    params = []
+    if vendor_id:
+        query += ' WHERE "LIFNR" = $1'
+        params.append(vendor_id)
+    query += ' ORDER BY "BEDAT" DESC, "EBELN"'
+
+    rows = await db_pool.fetch(query, *params)
     return [dict(r) for r in rows]
 
 

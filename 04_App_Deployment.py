@@ -408,10 +408,6 @@ w = WorkspaceClient()
 
 PROJECT = "delivery-slot-booking"
 
-# Get project UID
-project = w.api_client.do("GET", f"/api/2.0/postgres/projects/{PROJECT}")
-project_uid = project["uid"]
-
 # Get the app's service principal details
 app_info = w.api_client.do("GET", f"/api/2.0/apps/{APP_NAME}")
 sp_name = app_info["service_principal_name"]
@@ -419,10 +415,10 @@ sp_client_id = app_info["service_principal_client_id"]
 print(f"Service Principal: {sp_name}")
 print(f"Client ID:         {sp_client_id}")
 
-# Grant CAN_MANAGE on the Lakebase project
+# Grant CAN_MANAGE on the Lakebase project (permissions API uses project name, not UID)
 w.api_client.do(
     "PATCH",
-    f"/api/2.0/permissions/database-projects/{project_uid}",
+    f"/api/2.0/permissions/database-projects/{PROJECT}",
     body={"access_control_list": [
         {"service_principal_name": sp_name, "permission_level": "CAN_MANAGE"}
     ]}

@@ -203,6 +203,13 @@ if os.path.exists(dest_dir):
     shutil.rmtree(dest_dir)
 shutil.copytree(source_dir, dest_dir)
 
+# Ensure app.yml exists (Databricks Apps looks for app.yml, not app.yaml)
+app_yaml = os.path.join(dest_dir, "app.yaml")
+app_yml = os.path.join(dest_dir, "app.yml")
+if os.path.exists(app_yaml) and not os.path.exists(app_yml):
+    shutil.copy2(app_yaml, app_yml)
+    print("Created app.yml from app.yaml")
+
 file_count = sum(len(files) for _, _, files in os.walk(dest_dir))
 print(f"App files synced successfully ({file_count} files).")
 print(f"  From: {source_dir}")
@@ -246,6 +253,16 @@ try:
     print(response)
 except AlreadyExists:
     print(f"App '{APP_NAME}' already exists - will deploy new version.")
+
+# Grant all workspace users access to the app
+w.api_client.do(
+    "PATCH",
+    f"/api/2.0/permissions/apps/{APP_NAME}",
+    body={"access_control_list": [
+        {"group_name": "users", "permission_level": "CAN_USE"}
+    ]}
+)
+print(f"Granted CAN_USE on app '{APP_NAME}' to all workspace users.")
 
 # COMMAND ----------
 
@@ -372,61 +389,117 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 6: Post-Deployment Setup (Required on New Workspaces)
+# MAGIC ## Step 6: Grant Lakebase Access to the App's Service Principal
 # MAGIC
-# MAGIC After the app is deployed and running, three additional steps are needed to
-# MAGIC connect it to Lakebase. These are **one-time setup steps** per workspace.
+# MAGIC The app runs as a **service principal** that needs two things to connect to Lakebase:
 # MAGIC
-# MAGIC ### 6a. Grant the App's Service Principal Access to the Lakebase Project
+# MAGIC 1. **`CAN_MANAGE`** on the Lakebase project (so the SDK can resolve endpoints and generate credentials)
+# MAGIC 2. A **Postgres OAuth role** with table grants (so it can actually query `ekko`, `ekpo_enriched`, etc.)
 # MAGIC
-# MAGIC The app runs as a service principal that needs `CAN_MANAGE` on the Lakebase
-# MAGIC project to resolve endpoints and generate credentials.
-# MAGIC
-# MAGIC ```python
-# MAGIC import json
-# MAGIC from databricks.sdk import WorkspaceClient
-# MAGIC
-# MAGIC w = WorkspaceClient()
-# MAGIC
-# MAGIC # Get project UID
-# MAGIC project = w.api_client.do("GET", "/api/2.0/postgres/projects/delivery-slot-booking")
-# MAGIC project_uid = project["uid"]
-# MAGIC
-# MAGIC # Get the app's service principal name
-# MAGIC app_info = w.api_client.do("GET", "/api/2.0/apps/delivery-slot-booking")
-# MAGIC sp_name = app_info["service_principal_name"]
-# MAGIC sp_client_id = app_info["service_principal_client_id"]
-# MAGIC print(f"SP: {sp_name} (client_id: {sp_client_id})")
-# MAGIC
-# MAGIC # Grant CAN_MANAGE
-# MAGIC w.api_client.do("PATCH",
-# MAGIC     f"/api/2.0/permissions/database-projects/{project_uid}",
-# MAGIC     body={"access_control_list": [
-# MAGIC         {"service_principal_name": sp_name, "permission_level": "CAN_MANAGE"}
-# MAGIC     ]})
-# MAGIC print("Permission granted.")
-# MAGIC ```
-# MAGIC
-# MAGIC ### 6b. Create a Postgres OAuth Role for the Service Principal
-# MAGIC
-# MAGIC Connect to Lakebase as the project owner and create a role so the service
-# MAGIC principal can authenticate via OAuth:
-# MAGIC
-# MAGIC ```sql
-# MAGIC CREATE EXTENSION IF NOT EXISTS databricks_auth;
-# MAGIC SELECT databricks_create_role('<SP_CLIENT_ID>', 'service_principal');
-# MAGIC
-# MAGIC GRANT CONNECT ON DATABASE delivery_app TO "<SP_CLIENT_ID>";
-# MAGIC GRANT USAGE ON SCHEMA public TO "<SP_CLIENT_ID>";
-# MAGIC GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "<SP_CLIENT_ID>";
-# MAGIC ```
-# MAGIC
-# MAGIC Replace `<SP_CLIENT_ID>` with the `service_principal_client_id` from step 6a.
-# MAGIC
-# MAGIC ### 6c. Verify
-# MAGIC
-# MAGIC Refresh the app in your browser. The Vendor ID dropdown should now populate
-# MAGIC and available dates should load.
+# MAGIC Without these, the Vendor ID and Purchase Order dropdowns will be empty.
+# MAGIC Run the two cells below after the app is deployed and running.
+
+# COMMAND ----------
+
+# DBTITLE 1,Grant SP access to Lakebase project
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient()
+
+PROJECT = "delivery-slot-booking"
+
+# Get project UID
+project = w.api_client.do("GET", f"/api/2.0/postgres/projects/{PROJECT}")
+project_uid = project["uid"]
+
+# Get the app's service principal details
+app_info = w.api_client.do("GET", f"/api/2.0/apps/{APP_NAME}")
+sp_name = app_info["service_principal_name"]
+sp_client_id = app_info["service_principal_client_id"]
+print(f"Service Principal: {sp_name}")
+print(f"Client ID:         {sp_client_id}")
+
+# Grant CAN_MANAGE on the Lakebase project
+w.api_client.do(
+    "PATCH",
+    f"/api/2.0/permissions/database-projects/{project_uid}",
+    body={"access_control_list": [
+        {"service_principal_name": sp_name, "permission_level": "CAN_MANAGE"}
+    ]}
+)
+print(f"\n✓ Granted CAN_MANAGE on project '{PROJECT}' to {sp_name}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Create Postgres OAuth role and grant table access
+import psycopg2
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient()
+
+PROJECT = "delivery-slot-booking"
+DB_NAME = "delivery_app"
+
+# Get connection details
+response = w.api_client.do(
+    "GET",
+    f"/api/2.0/postgres/projects/{PROJECT}/branches/production/endpoints"
+)
+ep = response["endpoints"][0]
+host = ep["status"]["hosts"]["host"]
+
+cred = w.api_client.do(
+    "POST",
+    "/api/2.0/postgres/credentials",
+    body={"endpoint": ep["name"]}
+)
+token = cred["token"]
+email = w.current_user.me().user_name
+
+# Get SP client ID from previous cell
+app_info = w.api_client.do("GET", f"/api/2.0/apps/{APP_NAME}")
+sp_client_id = app_info["service_principal_client_id"]
+
+print(f"Host:         {host}")
+print(f"SP Client ID: {sp_client_id}")
+
+# Connect to Lakebase as project owner
+conn = psycopg2.connect(
+    host=host, port=5432, dbname=DB_NAME,
+    user=email, password=token, sslmode="require"
+)
+conn.autocommit = True
+cur = conn.cursor()
+
+# Create OAuth role for the service principal
+cur.execute("CREATE EXTENSION IF NOT EXISTS databricks_auth;")
+print("\n✓ databricks_auth extension ready")
+
+try:
+    cur.execute(f"SELECT databricks_create_role('{sp_client_id}', 'service_principal');")
+    print(f"✓ Created Postgres OAuth role for {sp_client_id}")
+except Exception as e:
+    if "already exists" in str(e).lower():
+        print(f"✓ Postgres OAuth role already exists for {sp_client_id}")
+        conn.rollback()
+        conn.autocommit = True
+    else:
+        raise
+
+# Grant permissions on the database
+grants = [
+    f'GRANT CONNECT ON DATABASE {DB_NAME} TO "{sp_client_id}"',
+    f'GRANT USAGE ON SCHEMA public TO "{sp_client_id}"',
+    f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{sp_client_id}"',
+]
+for g in grants:
+    cur.execute(g)
+    print(f"✓ {g[:70]}...")
+
+cur.close()
+conn.close()
+print(f"\n✓ All done — the app's service principal can now query Lakebase.")
+print(f"  Refresh the app to verify the Vendor ID dropdown populates.")
 
 # COMMAND ----------
 
@@ -440,22 +513,22 @@ else:
 # MAGIC | 1 | Run `02_Lakebase_Setup` | Notebook | Creates project, database, tables, loads data |
 # MAGIC | 2 | Update `SQL_WAREHOUSE_ID` | Cell 5 | Set to a valid warehouse from your workspace (run Cell 4 to list them) |
 # MAGIC | 3 | Run cells 5 → 15 | This notebook | Sets config, uploads files, creates app, deploys, waits for live |
-# MAGIC | 4 | Grant SP project access | Post-deploy (Step 6a) | `CAN_MANAGE` via Permissions API |
-# MAGIC | 5 | Create Postgres OAuth role | Post-deploy (Step 6b) | `databricks_create_role` + GRANTs |
-# MAGIC | 6 | Refresh browser | App URL | Verify dropdowns and dates load |
+# MAGIC | 4 | Run cells 19 → 20 | This notebook | Grants SP Lakebase project access + creates Postgres OAuth role |
+# MAGIC | 5 | Refresh browser | App URL | Verify Vendor ID dropdown populates and dates load |
 # MAGIC
 # MAGIC ## Troubleshooting
 # MAGIC
 # MAGIC | Symptom | Likely Cause | Fix |
 # MAGIC |---------|-------------|-----|
 # MAGIC | App compute stuck in STARTING | First-time provisioning | Wait up to 3 minutes |
-# MAGIC | `Failed to fetch available dates` | SP has no Lakebase project access | Run Step 6a (grant `CAN_MANAGE`) |
+# MAGIC | `Failed to fetch available dates` | SP has no Lakebase project access | Run Cell 19 (grant `CAN_MANAGE`) |
+# MAGIC | Vendor ID dropdown empty | Missing Postgres OAuth role for SP | Run Cell 20 (create role + GRANTs) |
 # MAGIC | Dropdowns empty (no vendors/POs) | `ekko`/`ekpo_enriched` tables missing in Lakebase | Re-run `02_Lakebase_Setup` data loading cells |
 # MAGIC | Deployment stuck IN_PROGRESS | `node_modules/` included in sync | Delete `frontend/node_modules/`, re-sync, redeploy |
 # MAGIC | `App process did not start within 10 min` | Crash on startup | Verify `databricks-sdk>=0.50.0` in `requirements.txt` |
 # MAGIC | 401 when calling app URL externally | App uses Databricks OAuth proxy | Access via browser (auto-authenticated) |
 # MAGIC | `Database instance not found` | Wrong API for Autoscaling | Use `/api/2.0/postgres/` endpoints, not `/api/2.0/database/` |
-# MAGIC | `InvalidAuthorizationSpecificationError` | Missing Postgres OAuth role | Run Step 6b (create role + GRANTs) |
+# MAGIC | `InvalidAuthorizationSpecificationError` | Missing Postgres OAuth role | Run Cell 20 (create role + GRANTs) |
 # MAGIC
 # MAGIC ## Key Files
 # MAGIC

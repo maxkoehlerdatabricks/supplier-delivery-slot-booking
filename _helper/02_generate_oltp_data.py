@@ -244,6 +244,14 @@ print(f"Wrote {updated_slots_df.count()} rows to {FULL_SCHEMA}.dock_slot")
 bookings_df.write.format("delta").mode("overwrite").saveAsTable(f"{FULL_SCHEMA}.delivery_booking")
 print(f"Wrote {bookings_df.count()} rows to {FULL_SCHEMA}.delivery_booking")
 
+# Grant read access to all workspace users
+for table in ["dock_slot", "delivery_booking"]:
+    spark.sql(f"GRANT SELECT ON TABLE {FULL_SCHEMA}.{table} TO `account users`")
+    print(f"Granted SELECT on {FULL_SCHEMA}.{table} to account users")
+
+spark.sql(f"GRANT USAGE ON SCHEMA {FULL_SCHEMA} TO `account users`")
+print(f"Granted USAGE on schema {FULL_SCHEMA} to account users")
+
 # COMMAND ----------
 
 # MAGIC %md

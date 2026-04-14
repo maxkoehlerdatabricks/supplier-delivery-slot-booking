@@ -313,51 +313,80 @@ print("Data load complete.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 7: Sync Delta Tables to Lakebase
+# MAGIC ## Step 7: Create and Load SAP Tables into Lakebase
 # MAGIC
-# MAGIC Replicate `ekko` and `ekpo_enriched` from Delta Lake into Lakebase as read-only
-# MAGIC synced tables. This enables low-latency PO lookups from the application without
-# MAGIC querying the lakehouse directly.
+# MAGIC Create `ekko` (PO headers) and `ekpo_enriched` (PO line items) directly in Lakebase
+# MAGIC and load data from the corresponding Delta tables. These tables power the
+# MAGIC Vendor ID and Purchase Order dropdowns in the app.
 
 # COMMAND ----------
 
-# Sync ekko and ekpo_enriched from Delta Lake to Lakebase
-# This creates read-only replicas in Lakebase for low-latency PO lookups
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.errors import BadRequest
+import psycopg2
 
-w = WorkspaceClient()
+# Refresh credentials
+host, token, email = get_connection_details()
 
-tables_to_sync = {
-    "ekko": ["EBELN"],
-    "ekpo_enriched": ["EBELN", "EBELP"],
-}
+conn = psycopg2.connect(
+    host=host, port=5432, dbname=DB_NAME,
+    user=email, password=token, sslmode="require"
+)
+conn.autocommit = True
+cur = conn.cursor()
 
-for table_name, pk_cols in tables_to_sync.items():
-    full_table = f"{CATALOG}.{SCHEMA}.{table_name}"
-    try:
-        response = w.api_client.do(
-            "POST",
-            f"/api/2.0/postgres/synced_tables?synced_table_id={full_table}",
-            body={
-                "spec": {
-                    "source_table_full_name": full_table,
-                    "project": f"projects/{PROJECT}",
-                    "branch": f"projects/{PROJECT}/branches/production",
-                    "primary_key_columns": pk_cols,
-                    "scheduling_policy": "TRIGGERED",
-                    "postgres_database": DB_NAME,
-                    "create_database_objects_if_missing": True
-                }
-            }
-        )
-        print(f"Syncing {table_name}: initiated")
-        print(f"  Operation: {response.get('name', response)}")
-    except BadRequest as e:
-        if "already exists" in str(e).lower():
-            print(f"Syncing {table_name}: already synced - continuing.")
-        else:
-            raise
+# --- Create and load ekko ---
+cur.execute("""
+CREATE TABLE IF NOT EXISTS ekko (
+    "EBELN" VARCHAR(20) PRIMARY KEY,
+    "BUKRS" VARCHAR(10),
+    "EKORG" VARCHAR(10),
+    "BEDAT" DATE,
+    "LIFNR" VARCHAR(20),
+    "BSART" VARCHAR(10)
+)
+""")
+print("Created ekko table")
+
+ekko_rows = spark.table(f"{FULL_SCHEMA}.ekko").collect()
+for row in ekko_rows:
+    cur.execute("""
+        INSERT INTO ekko ("EBELN", "BUKRS", "EKORG", "BEDAT", "LIFNR", "BSART")
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT ("EBELN") DO NOTHING
+    """, (row["EBELN"], row["BUKRS"], row["EKORG"], str(row["BEDAT"]),
+          row["LIFNR"], row["BSART"]))
+print(f"Loaded {len(ekko_rows)} rows into ekko")
+
+# --- Create and load ekpo_enriched ---
+cur.execute("""
+CREATE TABLE IF NOT EXISTS ekpo_enriched (
+    "EBELN" VARCHAR(20),
+    "EBELP" VARCHAR(10),
+    "MATNR" VARCHAR(40),
+    "WERKS" VARCHAR(10),
+    "MENGE" NUMERIC(15,3),
+    "MEINS" VARCHAR(10),
+    "NETPR" NUMERIC(15,2),
+    "ELIKZ" VARCHAR(5),
+    PRIMARY KEY ("EBELN", "EBELP")
+)
+""")
+print("Created ekpo_enriched table")
+
+ekpo_rows = spark.table(f"{FULL_SCHEMA}.ekpo_enriched").collect()
+for row in ekpo_rows:
+    cur.execute("""
+        INSERT INTO ekpo_enriched ("EBELN", "EBELP", "MATNR", "WERKS", "MENGE", "MEINS", "NETPR", "ELIKZ")
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT ("EBELN", "EBELP") DO NOTHING
+    """, (row["EBELN"], row["EBELP"], row["MATNR"], row["WERKS"],
+          float(row["MENGE"]) if row["MENGE"] else 0,
+          row["MEINS"], float(row["NETPR"]) if row["NETPR"] else 0,
+          row["ELIKZ"]))
+print(f"Loaded {len(ekpo_rows)} rows into ekpo_enriched")
+
+cur.close()
+conn.close()
+print("\nSAP tables created and loaded successfully.")
 
 # COMMAND ----------
 
@@ -452,7 +481,11 @@ def verify_branch(branch_name, endpoint="primary"):
         cur.execute("""
             SELECT 'dock_slot' AS tbl, COUNT(*) AS cnt FROM dock_slot
             UNION ALL
-            SELECT 'delivery_booking', COUNT(*) FROM delivery_booking;
+            SELECT 'delivery_booking', COUNT(*) FROM delivery_booking
+            UNION ALL
+            SELECT 'ekko', COUNT(*) FROM ekko
+            UNION ALL
+            SELECT 'ekpo_enriched', COUNT(*) FROM ekpo_enriched;
         """)
         for row in cur.fetchall():
             print(f"  {row[0]}: {row[1]} rows")
@@ -477,11 +510,11 @@ verify_branch("dev", endpoint="read-write")
 # MAGIC | Resource | Name | Details |
 # MAGIC |----------|------|---------|
 # MAGIC | Lakebase Project | `delivery-slot-booking` | PostgreSQL-compatible database |
-# MAGIC | Database | `delivery_app` | Contains OLTP tables |
+# MAGIC | Database | `delivery_app` | Contains OLTP and SAP tables |
 # MAGIC | Table | `dock_slot` | Delivery dock time slots |
 # MAGIC | Table | `delivery_booking` | Supplier delivery bookings |
-# MAGIC | Synced Table | `ekko` | PO headers (read-only from Delta) |
-# MAGIC | Synced Table | `ekpo_enriched` | Enriched PO items (read-only from Delta) |
+# MAGIC | Table | `ekko` | PO headers (loaded from Delta) |
+# MAGIC | Table | `ekpo_enriched` | Enriched PO items (loaded from Delta) |
 # MAGIC | Branch | `production` | Main branch with primary endpoint |
 # MAGIC | Branch | `dev` | Development branch with read-write endpoint |
 # MAGIC

@@ -151,6 +151,14 @@ print(f"Wrote {ekko_df.count()} rows to {FULL_SCHEMA}.ekko")
 ekpo_df.write.format("delta").mode("overwrite").saveAsTable(f"{FULL_SCHEMA}.ekpo")
 print(f"Wrote {ekpo_df.count()} rows to {FULL_SCHEMA}.ekpo")
 
+# Grant read access to all workspace users
+for table in ["ekko", "ekpo"]:
+    spark.sql(f"GRANT SELECT ON TABLE {FULL_SCHEMA}.{table} TO `account users`")
+    print(f"Granted SELECT on {FULL_SCHEMA}.{table} to account users")
+
+spark.sql(f"GRANT USAGE ON SCHEMA {FULL_SCHEMA} TO `account users`")
+print(f"Granted USAGE on schema {FULL_SCHEMA} to account users")
+
 # COMMAND ----------
 
 # MAGIC %md

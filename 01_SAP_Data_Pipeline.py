@@ -171,6 +171,11 @@ display(ekpo_enriched.limit(10))
 ekpo_enriched.write.format("delta").mode("overwrite").saveAsTable(f"{FULL_SCHEMA}.ekpo_enriched")
 print(f"Wrote enriched table to {FULL_SCHEMA}.ekpo_enriched")
 
+# Grant read access to all workspace users
+spark.sql(f"GRANT SELECT ON TABLE {FULL_SCHEMA}.ekpo_enriched TO `account users`")
+spark.sql(f"GRANT USAGE ON SCHEMA {FULL_SCHEMA} TO `account users`")
+print(f"Granted SELECT on {FULL_SCHEMA}.ekpo_enriched to account users")
+
 # COMMAND ----------
 
 # MAGIC %md

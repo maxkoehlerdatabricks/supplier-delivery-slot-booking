@@ -89,6 +89,7 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,List warehouses
 from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
@@ -107,7 +108,7 @@ print("=" * 80)
 # COMMAND ----------
 
 # DBTITLE 1,Set SQL Warehouse ID
-# ── SET YOUR SQL WAREHOUSE ID HERE ──────────────────────────────────────────────
+# ── SET YOUR SQL WAREHOUSE ID HERE ───────────────────────────────────────────────────────────
 # Replace the value below with a warehouse ID from the list above.
 # This is the ONLY value you need to change when replicating to a new workspace.
 
@@ -188,22 +189,20 @@ print(f"Workspace path:   {WORKSPACE_APP_PATH}")
 
 # COMMAND ----------
 
+# DBTITLE 1,Upload app files
 import shutil
 import os
 
-# Source: app/ directory next to this notebook in the project folder
 source_dir = f"/Workspace/Users/{USER}/supplier-delivery-slot-booking/app"
 dest_dir = WORKSPACE_APP_PATH
 
 if not os.path.exists(source_dir):
     raise FileNotFoundError(f"App source not found at {source_dir}")
 
-# Clean destination and copy fresh
 if os.path.exists(dest_dir):
     shutil.rmtree(dest_dir)
 shutil.copytree(source_dir, dest_dir)
 
-# Ensure app.yml exists (Databricks Apps looks for app.yml, not app.yaml)
 app_yaml = os.path.join(dest_dir, "app.yaml")
 app_yml = os.path.join(dest_dir, "app.yml")
 if os.path.exists(app_yaml) and not os.path.exists(app_yml):
@@ -227,6 +226,7 @@ print(f"  To:   {dest_dir}")
 
 # COMMAND ----------
 
+# DBTITLE 1,Create app
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import AlreadyExists
 
@@ -254,7 +254,6 @@ try:
 except AlreadyExists:
     print(f"App '{APP_NAME}' already exists - will deploy new version.")
 
-# Grant all workspace users access to the app
 w.api_client.do(
     "PATCH",
     f"/api/2.0/permissions/apps/{APP_NAME}",
@@ -263,6 +262,96 @@ w.api_client.do(
     ]}
 )
 print(f"Granted CAN_USE on app '{APP_NAME}' to all workspace users.")
+
+# COMMAND ----------
+
+# DBTITLE 1,Step 2b: Grant SP Permissions Pre-Deployment
+# MAGIC %md
+# MAGIC ## Step 2b: Grant Service Principal Permissions (Pre-Deployment)
+# MAGIC
+# MAGIC The app's service principal must have Lakebase access **before** deployment,
+# MAGIC otherwise the connection pool fails on startup. This cell grants:
+# MAGIC - `CAN_MANAGE` on the Lakebase project (so the SDK can resolve endpoints)
+# MAGIC - A Postgres OAuth role for the SP
+# MAGIC - `SELECT`, `INSERT`, `UPDATE`, `DELETE` on all tables
+# MAGIC - `USAGE`, `SELECT` on all sequences (required for SERIAL auto-increment)
+
+# COMMAND ----------
+
+# DBTITLE 1,Grant SP all Lakebase permissions
+import psycopg2
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
+
+w = WorkspaceClient()
+
+PROJECT = "delivery-slot-booking"
+DB_NAME = "delivery_app"
+
+app_info = w.api_client.do("GET", f"/api/2.0/apps/{APP_NAME}")
+sp_name = app_info["service_principal_name"]
+sp_client_id = app_info["service_principal_client_id"]
+print(f"Service Principal: {sp_name}")
+print(f"Client ID:         {sp_client_id}")
+
+w.api_client.do(
+    "PATCH",
+    f"/api/2.0/permissions/database-projects/{PROJECT}",
+    body={"access_control_list": [
+        {"service_principal_name": sp_name, "permission_level": "CAN_MANAGE"}
+    ]}
+)
+print(f"\n\u2713 Granted CAN_MANAGE on project '{PROJECT}' to {sp_name}")
+
+response = w.api_client.do(
+    "GET",
+    f"/api/2.0/postgres/projects/{PROJECT}/branches/production/endpoints"
+)
+ep = response["endpoints"][0]
+host = ep["status"]["hosts"]["host"]
+
+cred = w.api_client.do(
+    "POST",
+    "/api/2.0/postgres/credentials",
+    body={"endpoint": ep["name"]}
+)
+token = cred["token"]
+email = w.current_user.me().user_name
+
+conn = psycopg2.connect(
+    host=host, port=5432, dbname=DB_NAME,
+    user=email, password=token, sslmode="require"
+)
+conn.autocommit = True
+cur = conn.cursor()
+
+cur.execute("CREATE EXTENSION IF NOT EXISTS databricks_auth;")
+print("\u2713 databricks_auth extension ready")
+
+try:
+    cur.execute(f"SELECT databricks_create_role('{sp_client_id}', 'service_principal');")
+    print(f"\u2713 Created Postgres OAuth role for {sp_client_id}")
+except Exception as e:
+    if "already exists" in str(e).lower():
+        print(f"\u2713 Postgres OAuth role already exists for {sp_client_id}")
+        conn.rollback()
+        conn.autocommit = True
+    else:
+        raise
+
+grants = [
+    f'GRANT CONNECT ON DATABASE {DB_NAME} TO "{sp_client_id}"',
+    f'GRANT USAGE ON SCHEMA public TO "{sp_client_id}"',
+    f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{sp_client_id}"',
+    f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{sp_client_id}"',
+]
+for g in grants:
+    cur.execute(g)
+    print(f"\u2713 {g[:70]}...")
+
+cur.close()
+conn.close()
+print(f"\n\u2713 SP has full Lakebase access \u2014 ready for deployment.")
 
 # COMMAND ----------
 
@@ -275,12 +364,12 @@ print(f"Granted CAN_USE on app '{APP_NAME}' to all workspace users.")
 
 # COMMAND ----------
 
+# DBTITLE 1,Deploy app
 import time
 from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-# Wait for app compute to reach RUNNING state before deploying
 MAX_WAIT = 300
 POLL_INTERVAL = 15
 
@@ -299,7 +388,6 @@ for attempt in range(MAX_WAIT // POLL_INTERVAL):
 else:
     print(f"WARNING: Compute not ready after {MAX_WAIT}s. Attempting deploy anyway...")
 
-# Deploy
 response = w.api_client.do(
     "POST",
     f"/api/2.0/apps/{APP_NAME}/deployments",
@@ -319,6 +407,7 @@ print(json.dumps(response, indent=2))
 
 # COMMAND ----------
 
+# DBTITLE 1,Verify app running
 import time
 from databricks.sdk import WorkspaceClient
 
@@ -388,16 +477,17 @@ else:
 
 # COMMAND ----------
 
+# DBTITLE 1,Step 6: Re-grant SP Permissions (if needed)
 # MAGIC %md
-# MAGIC ## Step 6: Grant Lakebase Access to the App's Service Principal
+# MAGIC ## Step 6: Post-Deployment — Re-grant SP Permissions (if needed)
 # MAGIC
-# MAGIC The app runs as a **service principal** that needs two things to connect to Lakebase:
+# MAGIC The cells below re-run the same SP permission grants from Step 2b.
+# MAGIC They are **idempotent** and useful if you need to re-grant permissions
+# MAGIC after recreating the app or changing the service principal.
 # MAGIC
-# MAGIC 1. **`CAN_MANAGE`** on the Lakebase project (so the SDK can resolve endpoints and generate credentials)
-# MAGIC 2. A **Postgres OAuth role** with table grants (so it can actually query `ekko`, `ekpo_enriched`, etc.)
-# MAGIC
-# MAGIC Without these, the Vendor ID and Purchase Order dropdowns will be empty.
-# MAGIC Run the two cells below after the app is deployed and running.
+# MAGIC > When running this notebook top-to-bottom (or via `run_all`), Step 2b
+# MAGIC > already handles permissions before deployment. These cells are only
+# MAGIC > needed for manual troubleshooting.
 
 # COMMAND ----------
 
@@ -469,14 +559,14 @@ cur = conn.cursor()
 
 # Create OAuth role for the service principal
 cur.execute("CREATE EXTENSION IF NOT EXISTS databricks_auth;")
-print("\n✓ databricks_auth extension ready")
+print("\n\u2713 databricks_auth extension ready")
 
 try:
     cur.execute(f"SELECT databricks_create_role('{sp_client_id}', 'service_principal');")
-    print(f"✓ Created Postgres OAuth role for {sp_client_id}")
+    print(f"\u2713 Created Postgres OAuth role for {sp_client_id}")
 except Exception as e:
     if "already exists" in str(e).lower():
-        print(f"✓ Postgres OAuth role already exists for {sp_client_id}")
+        print(f"\u2713 Postgres OAuth role already exists for {sp_client_id}")
         conn.rollback()
         conn.autocommit = True
     else:
@@ -487,18 +577,20 @@ grants = [
     f'GRANT CONNECT ON DATABASE {DB_NAME} TO "{sp_client_id}"',
     f'GRANT USAGE ON SCHEMA public TO "{sp_client_id}"',
     f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{sp_client_id}"',
+    f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{sp_client_id}"',
 ]
 for g in grants:
     cur.execute(g)
-    print(f"✓ {g[:70]}...")
+    print(f"\u2713 {g[:70]}...")
 
 cur.close()
 conn.close()
-print(f"\n✓ All done — the app's service principal can now query Lakebase.")
+print(f"\n\u2713 All done \u2014 the app's service principal can now query Lakebase.")
 print(f"  Refresh the app to verify the Vendor ID dropdown populates.")
 
 # COMMAND ----------
 
+# DBTITLE 1,Replication checklist and troubleshooting
 # MAGIC %md
 # MAGIC ## Replication Checklist
 # MAGIC
@@ -520,6 +612,8 @@ print(f"  Refresh the app to verify the Vendor ID dropdown populates.")
 # MAGIC | `Failed to fetch available dates` | SP has no Lakebase project access | Run Cell 19 (grant `CAN_MANAGE`) |
 # MAGIC | Vendor ID dropdown empty | Missing Postgres OAuth role for SP | Run Cell 20 (create role + GRANTs) |
 # MAGIC | Dropdowns empty (no vendors/POs) | `ekko`/`ekpo_enriched` tables missing in Lakebase | Re-run `02_Lakebase_Setup` data loading cells |
+# MAGIC | "Booking failed" on submit | SP missing USAGE on SERIAL sequences | Cell 20 now grants sequence permissions; re-run it |
+# MAGIC | "Booking failed" after fresh data load | SERIAL sequence not reset after bulk load | `02_Lakebase_Setup` Cell 16 resets sequences; re-run it |
 # MAGIC | Deployment stuck IN_PROGRESS | `node_modules/` included in sync | Delete `frontend/node_modules/`, re-sync, redeploy |
 # MAGIC | `App process did not start within 10 min` | Crash on startup | Verify `databricks-sdk>=0.50.0` in `requirements.txt` |
 # MAGIC | 401 when calling app URL externally | App uses Databricks OAuth proxy | Access via browser (auto-authenticated) |
@@ -547,3 +641,13 @@ print(f"  Refresh the app to verify the Vendor ID dropdown populates.")
 # MAGIC | Database | Lakebase Autoscaling → `delivery_app` |
 # MAGIC | Auth | Databricks SDK OAuth (auto-managed by service principal) |
 # MAGIC | Source | `app/` directory (sibling of this notebook) |
+
+# COMMAND ----------
+
+# DBTITLE 1,Signal completion for dbutils.notebook.run()
+# Signal successful completion when called via dbutils.notebook.run()
+# This cell must be the LAST cell in the notebook.
+try:
+    dbutils.notebook.exit("success")
+except NameError:
+    print("Running interactively — no exit needed.")

@@ -110,7 +110,7 @@ from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-MAX_WAIT_SECONDS = 300
+MAX_WAIT_SECONDS = 600
 POLL_INTERVAL = 15
 
 for attempt in range(MAX_WAIT_SECONDS // POLL_INTERVAL):
@@ -133,7 +133,7 @@ for attempt in range(MAX_WAIT_SECONDS // POLL_INTERVAL):
 
     time.sleep(POLL_INTERVAL)
 else:
-    print(f"WARNING: Project not ready after {MAX_WAIT_SECONDS}s. Continuing anyway...")
+    raise TimeoutError(f"Lakebase endpoint not ACTIVE after {MAX_WAIT_SECONDS}s. Check the project in the Lakebase UI.")
 
 # COMMAND ----------
 
@@ -264,6 +264,7 @@ conn.close()
 
 # COMMAND ----------
 
+# DBTITLE 1,Load data from Delta into Lakebase
 import psycopg2
 
 # Refresh credentials
@@ -304,6 +305,11 @@ for row in bookings_df:
           row.truck_plate, row.driver_name, row.status, row.created_at, row.updated_at))
 
 print(f"Inserted {len(bookings_df)} delivery_booking rows")
+
+# --- Reset SERIAL sequences to avoid duplicate key on new inserts ---
+cur.execute("SELECT setval('dock_slot_slot_id_seq', (SELECT MAX(slot_id) FROM dock_slot));")
+cur.execute("SELECT setval('delivery_booking_booking_id_seq', (SELECT MAX(booking_id) FROM delivery_booking));")
+print("Reset SERIAL sequences to match loaded data")
 
 conn.commit()
 cur.close()

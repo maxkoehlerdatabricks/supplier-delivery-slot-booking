@@ -78,23 +78,42 @@ from databricks.sdk.errors import BadRequest
 
 w = WorkspaceClient()
 
-try:
-    response = w.api_client.do(
-        "POST",
-        f"/api/2.0/postgres/projects?project_id={PROJECT}",
-        body={
-            "spec": {
-                "display_name": "Delivery Slot Booking"
+MAX_CREATE_RETRIES = 20   # 20 × 15s = 5 min max wait for ghost-state cleanup
+CREATE_RETRY_INTERVAL = 15
+
+for retry in range(MAX_CREATE_RETRIES):
+    try:
+        response = w.api_client.do(
+            "POST",
+            f"/api/2.0/postgres/projects?project_id={PROJECT}",
+            body={
+                "spec": {
+                    "display_name": "Delivery Slot Booking"
+                }
             }
-        }
+        )
+        print(f"Project '{PROJECT}' creation initiated.")
+        print(response)
+        break
+    except BadRequest as e:
+        if "already exists" in str(e):
+            # Verify the project is actually usable (not stuck in DELETING state)
+            try:
+                w.api_client.do("GET", f"/api/2.0/postgres/projects/{PROJECT}")
+                print(f"Project '{PROJECT}' already exists and is accessible \u2014 continuing.")
+                break
+            except Exception:
+                # Project record exists but isn't accessible \u2014 still being deleted
+                print(f"Attempt {retry + 1}/{MAX_CREATE_RETRIES}: Project in ghost state (prior deletion still in progress). Retrying in {CREATE_RETRY_INTERVAL}s...")
+                time.sleep(CREATE_RETRY_INTERVAL)
+                continue
+        else:
+            raise
+else:
+    raise RuntimeError(
+        f"Could not create project '{PROJECT}' after {MAX_CREATE_RETRIES} retries. "
+        f"A previous deletion may still be in progress \u2014 wait a few minutes and retry."
     )
-    print(f"Project '{PROJECT}' creation initiated.")
-    print(response)
-except BadRequest as e:
-    if "already exists" in str(e):
-        print(f"Project '{PROJECT}' already exists - continuing.")
-    else:
-        raise
 
 # COMMAND ----------
 
@@ -110,7 +129,7 @@ from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-MAX_WAIT_SECONDS = 600
+MAX_WAIT_SECONDS = 900   # 15 min — allow extra time after a fresh project deletion
 POLL_INTERVAL = 15
 
 for attempt in range(MAX_WAIT_SECONDS // POLL_INTERVAL):

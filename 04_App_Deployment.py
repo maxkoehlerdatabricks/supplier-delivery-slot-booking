@@ -53,68 +53,32 @@
 # MAGIC    → Run **`02_Lakebase_Setup`** first.
 # MAGIC 3. The **`app/`** directory (sibling of this notebook) contains the application
 # MAGIC    source code (frontend `dist/` already built, backend Python files).
-# MAGIC 4. A **SQL warehouse** is available in the workspace — you will need its ID for
-# MAGIC    the app resource binding (cell 9).
-# MAGIC 5. The notebook is attached to **serverless compute** (or any cluster with the
+# MAGIC 4. The notebook is attached to **serverless compute** (or any cluster with the
 # MAGIC    Databricks Python SDK available).
 # MAGIC
-# MAGIC > **Note:** The Databricks CLI is *not* required. All operations use the
-# MAGIC > Databricks Python SDK which is pre-authenticated on Databricks compute.
+# MAGIC > **Note:** No SQL warehouse is required. The app connects directly to Lakebase
+# MAGIC > via the Postgres protocol. The Databricks CLI is also *not* required — all
+# MAGIC > operations use the Databricks Python SDK which is pre-authenticated on
+# MAGIC > Databricks compute.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Configuration
 # MAGIC
-# MAGIC The cells below set workspace-relative paths and the SQL warehouse ID.
-# MAGIC **No hardcoded profiles** — everything is derived from the current user context.
+# MAGIC The cells below set workspace-relative paths for deployment.
+# MAGIC **No hardcoded profiles or warehouse IDs** — everything is derived from the
+# MAGIC current user context.
 # MAGIC
 # MAGIC | Variable | Purpose |
 # MAGIC |---|---|
-# MAGIC | `SQL_WAREHOUSE_ID` | SQL warehouse for the app resource binding — **set in the cell below** |
 # MAGIC | `APP_NAME` | Databricks App name (must match the Lakebase project name) |
 # MAGIC | `USER` | Current user email (auto-detected via SDK) |
 # MAGIC | `WORKSPACE_APP_PATH` | Target path where app files are uploaded for deployment |
 # MAGIC
-# MAGIC ### How to find your SQL Warehouse ID
-# MAGIC
-# MAGIC You have three options:
-# MAGIC
-# MAGIC 1. **Run the cell below** — it lists all warehouses in your workspace so you can
-# MAGIC    pick the right one.
-# MAGIC 2. **From the UI** — go to **SQL Warehouses** in the sidebar, click the warehouse,
-# MAGIC    and copy the ID from the URL: `.../sql/warehouses/<THIS_IS_THE_ID>`.
-# MAGIC 3. **From the warehouse details page** — open the warehouse and look for the
-# MAGIC    **ID** field in the **Connection details** tab.
-
-# COMMAND ----------
-
-# DBTITLE 1,List warehouses
-from databricks.sdk import WorkspaceClient
-
-w = WorkspaceClient()
-
-# List available SQL warehouses
-print("Available SQL Warehouses:\n")
-print(f"{'ID':<24} {'Name':<40} {'State'}")
-print("-" * 80)
-for wh in w.warehouses.list():
-    print(f"{wh.id:<24} {wh.name:<40} {wh.state.value if wh.state else 'N/A'}")
-
-print("\n" + "=" * 80)
-print("Set SQL_WAREHOUSE_ID below to one of the IDs above.")
-print("=" * 80)
-
-# COMMAND ----------
-
-# DBTITLE 1,Set SQL Warehouse ID
-# ── SET YOUR SQL WAREHOUSE ID HERE ───────────────────────────────────────────────────────────
-# Replace the value below with a warehouse ID from the list above.
-# This is the ONLY value you need to change when replicating to a new workspace.
-
-SQL_WAREHOUSE_ID = "29e7967254530371"
-
-print(f"Using SQL Warehouse ID: {SQL_WAREHOUSE_ID}")
+# MAGIC > **Note:** No SQL warehouse is needed. The app connects directly to Lakebase
+# MAGIC > via the Postgres protocol, and all credentials are resolved dynamically via
+# MAGIC > the Databricks SDK.
 
 # COMMAND ----------
 
@@ -131,7 +95,6 @@ USER = w.current_user.me().user_name
 WORKSPACE_APP_PATH = f"/Workspace/Users/{USER}/apps/{APP_NAME}"
 
 print(f"App name:         {APP_NAME}")
-print(f"SQL Warehouse ID: {SQL_WAREHOUSE_ID}")
 print(f"User:             {USER}")
 print(f"Workspace path:   {WORKSPACE_APP_PATH}")
 
@@ -141,14 +104,14 @@ print(f"Workspace path:   {WORKSPACE_APP_PATH}")
 # MAGIC ## App Configuration (`app.yaml`)
 # MAGIC
 # MAGIC The `app.yaml` in the `app/` directory defines runtime settings. When deploying
-# MAGIC to a **new workspace**, you must update two things:
+# MAGIC to a **new workspace**, the only value you may need to change is **`PGDATABASE`**
+# MAGIC — only if you used a different database name in `02_Lakebase_Setup`.
 # MAGIC
-# MAGIC 1. **SQL warehouse ID** in `resources` → replace with a valid warehouse from
-# MAGIC    your workspace (find it in SQL Warehouses → warehouse details → ID).
-# MAGIC 2. **`PGDATABASE`** → only change if you used a different database name in
-# MAGIC    `02_Lakebase_Setup`.
+# MAGIC > **No SQL warehouse resource binding needed.** The app connects directly to
+# MAGIC > Lakebase via the Postgres protocol. Any `resources` section referencing a
+# MAGIC > SQL warehouse is automatically stripped during the upload step.
 # MAGIC
-# MAGIC The current `app.yaml`:
+# MAGIC The `app.yaml` used for deployment:
 # MAGIC
 # MAGIC ```yaml
 # MAGIC command:
@@ -165,11 +128,6 @@ print(f"Workspace path:   {WORKSPACE_APP_PATH}")
 # MAGIC     value: "primary"
 # MAGIC   - name: PGDATABASE
 # MAGIC     value: "delivery_app"
-# MAGIC resources:
-# MAGIC   - name: sql-warehouse
-# MAGIC     sql_warehouse:
-# MAGIC       id: "<YOUR_SQL_WAREHOUSE_ID>"   # ← replace with your warehouse ID
-# MAGIC       permission: CAN_USE
 # MAGIC ```
 # MAGIC
 # MAGIC > **Important:** No `PGHOST`, `PGUSER`, or `PGPASSWORD` env vars are needed.
@@ -192,6 +150,7 @@ print(f"Workspace path:   {WORKSPACE_APP_PATH}")
 # DBTITLE 1,Upload app files
 import shutil
 import os
+import re
 
 source_dir = f"/Workspace/Users/{USER}/supplier-delivery-slot-booking/app"
 dest_dir = WORKSPACE_APP_PATH
@@ -203,14 +162,32 @@ if os.path.exists(dest_dir):
     shutil.rmtree(dest_dir)
 shutil.copytree(source_dir, dest_dir)
 
+# ── Patch app.yaml: remove SQL warehouse resource binding (not needed) ───────
 app_yaml = os.path.join(dest_dir, "app.yaml")
+if os.path.exists(app_yaml):
+    with open(app_yaml) as f:
+        text = f.read()
+    # Strip the top-level 'resources:' block (and all its indented children)
+    patched = re.sub(r'\nresources:\s*\n(?:[ \t]+.*\n?)*', '\n', text)
+    if patched != text:
+        with open(app_yaml, "w") as f:
+            f.write(patched)
+        print("Patched app.yaml: removed 'resources' section (no SQL warehouse needed)")
+    else:
+        print("app.yaml already has no resources section")
+
+# Ensure app.yml copy exists (some runtimes expect .yml)
 app_yml = os.path.join(dest_dir, "app.yml")
 if os.path.exists(app_yaml) and not os.path.exists(app_yml):
     shutil.copy2(app_yaml, app_yml)
     print("Created app.yml from app.yaml")
+elif os.path.exists(app_yml):
+    # Re-copy patched version
+    shutil.copy2(app_yaml, app_yml)
+    print("Updated app.yml with patched app.yaml")
 
 file_count = sum(len(files) for _, _, files in os.walk(dest_dir))
-print(f"App files synced successfully ({file_count} files).")
+print(f"\nApp files synced successfully ({file_count} files).")
 print(f"  From: {source_dir}")
 print(f"  To:   {dest_dir}")
 
@@ -219,10 +196,11 @@ print(f"  To:   {dest_dir}")
 # MAGIC %md
 # MAGIC ## Step 2: Create the Databricks App
 # MAGIC
-# MAGIC Registers the application with the Databricks Apps service. The app is created
-# MAGIC with the `SQL_WAREHOUSE_ID` variable set in the configuration cells above.
+# MAGIC Registers the application with the Databricks Apps service. No SQL warehouse
+# MAGIC resource binding is needed — the app connects directly to Lakebase via the
+# MAGIC Postgres protocol.
 # MAGIC
-# MAGIC > **Replicating?** Just update the warehouse ID in Cell 5 before running — no other code edits needed.
+# MAGIC > **Replicating?** No configuration changes needed — just run the cells in order.
 
 # COMMAND ----------
 
@@ -235,16 +213,6 @@ w = WorkspaceClient()
 app_config = {
     "name": APP_NAME,
     "description": "Supplier Delivery Slot Booking",
-    "resources": [
-        {
-            "name": "lakebase",
-            "description": "Lakebase database",
-            "sql_warehouse": {
-                "id": SQL_WAREHOUSE_ID,
-                "permission": "CAN_USE"
-            }
-        }
-    ]
 }
 
 try:
@@ -279,6 +247,7 @@ print(f"Granted CAN_USE on app '{APP_NAME}' to all workspace users.")
 # COMMAND ----------
 
 # DBTITLE 1,Grant SP all Lakebase permissions
+import time
 import psycopg2
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
@@ -288,7 +257,16 @@ w = WorkspaceClient()
 PROJECT = "delivery-slot-booking"
 DB_NAME = "delivery_app"
 
-app_info = w.api_client.do("GET", f"/api/2.0/apps/{APP_NAME}")
+# Wait for the service principal to be assigned (async after app creation)
+for _attempt in range(20):
+    app_info = w.api_client.do("GET", f"/api/2.0/apps/{APP_NAME}")
+    if "service_principal_name" in app_info:
+        break
+    print("Waiting for service principal assignment...")
+    time.sleep(5)
+else:
+    raise RuntimeError("Service principal not assigned after 100s. Check app status.")
+
 sp_name = app_info["service_principal_name"]
 sp_client_id = app_info["service_principal_client_id"]
 print(f"Service Principal: {sp_name}")
@@ -599,32 +577,34 @@ print(f"  Refresh the app to verify the Vendor ID dropdown populates.")
 # MAGIC | # | Step | Where | Notes |
 # MAGIC |---|------|-------|-------|
 # MAGIC | 1 | Run `02_Lakebase_Setup` | Notebook | Creates project, database, tables, loads data |
-# MAGIC | 2 | Update `SQL_WAREHOUSE_ID` | Cell 5 | Set to a valid warehouse from your workspace (run Cell 4 to list them) |
-# MAGIC | 3 | Run cells 5 → 15 | This notebook | Sets config, uploads files, creates app, deploys, waits for live |
-# MAGIC | 4 | Run cells 19 → 20 | This notebook | Grants SP Lakebase project access + creates Postgres OAuth role |
-# MAGIC | 5 | Refresh browser | App URL | Verify Vendor ID dropdown populates and dates load |
+# MAGIC | 2 | Run all cells in order | This notebook | Sets config, uploads files (auto-patches `app.yaml`), creates app, deploys, waits for live |
+# MAGIC | 3 | Refresh browser | App URL | Verify Vendor ID dropdown populates and dates load |
+# MAGIC
+# MAGIC > **No SQL warehouse ID is needed.** The app connects directly to Lakebase via
+# MAGIC > the Postgres protocol. The upload step automatically strips any `resources`
+# MAGIC > section from `app.yaml`.
 # MAGIC
 # MAGIC ## Troubleshooting
 # MAGIC
 # MAGIC | Symptom | Likely Cause | Fix |
 # MAGIC |---------|-------------|-----|
 # MAGIC | App compute stuck in STARTING | First-time provisioning | Wait up to 3 minutes |
-# MAGIC | `Failed to fetch available dates` | SP has no Lakebase project access | Run Cell 19 (grant `CAN_MANAGE`) |
-# MAGIC | Vendor ID dropdown empty | Missing Postgres OAuth role for SP | Run Cell 20 (create role + GRANTs) |
+# MAGIC | `Failed to fetch available dates` | SP has no Lakebase project access | Re-run the SP permissions cell (grant `CAN_MANAGE`) |
+# MAGIC | Vendor ID dropdown empty | Missing Postgres OAuth role for SP | Re-run the Postgres OAuth role cell (create role + GRANTs) |
 # MAGIC | Dropdowns empty (no vendors/POs) | `ekko`/`ekpo_enriched` tables missing in Lakebase | Re-run `02_Lakebase_Setup` data loading cells |
-# MAGIC | "Booking failed" on submit | SP missing USAGE on SERIAL sequences | Cell 20 now grants sequence permissions; re-run it |
+# MAGIC | "Booking failed" on submit | SP missing USAGE on SERIAL sequences | Re-run the Postgres OAuth role cell (grants sequence permissions) |
 # MAGIC | "Booking failed" after fresh data load | SERIAL sequence not reset after bulk load | `02_Lakebase_Setup` Cell 16 resets sequences; re-run it |
 # MAGIC | Deployment stuck IN_PROGRESS | `node_modules/` included in sync | Delete `frontend/node_modules/`, re-sync, redeploy |
 # MAGIC | `App process did not start within 10 min` | Crash on startup | Verify `databricks-sdk>=0.50.0` in `requirements.txt` |
 # MAGIC | 401 when calling app URL externally | App uses Databricks OAuth proxy | Access via browser (auto-authenticated) |
 # MAGIC | `Database instance not found` | Wrong API for Autoscaling | Use `/api/2.0/postgres/` endpoints, not `/api/2.0/database/` |
-# MAGIC | `InvalidAuthorizationSpecificationError` | Missing Postgres OAuth role | Run Cell 20 (create role + GRANTs) |
+# MAGIC | `InvalidAuthorizationSpecificationError` | Missing Postgres OAuth role | Re-run the Postgres OAuth role cell (create role + GRANTs) |
 # MAGIC
 # MAGIC ## Key Files
 # MAGIC
 # MAGIC | File | Purpose |
 # MAGIC |------|--------|
-# MAGIC | `app/app.yaml` | App runtime config, env vars, resource bindings |
+# MAGIC | `app/app.yaml` | App runtime config, env vars (resources section auto-stripped at deploy) |
 # MAGIC | `app/server/config.py` | Lakebase connection logic (SDK-based, no hardcoded creds) |
 # MAGIC | `app/server/db.py` | asyncpg connection pool manager |
 # MAGIC | `app/server/routes/pos.py` | PO/vendor lookup endpoints (query `ekko`) |

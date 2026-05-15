@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supplier Delivery Slot Booking — Demo Script</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3340;
+    --text: #e1e4eb;
+    --text-muted: #8b91a0;
+    --accent: #ff3621;
+    --accent2: #ff6b4a;
+    --blue: #4a9eff;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  /* Sidebar Navigation */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 24px 0;
+    z-index: 100;
+  }
+
+  .sidebar-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--accent);
+    padding: 0 20px 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+
+  .sidebar a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+
+  .sidebar a:hover {
+    color: var(--text);
+    background: var(--surface2);
+    border-left-color: var(--accent);
+  }
+
+  .sidebar a.part-link {
+    font-weight: 700;
+    color: var(--text);
+    font-size: 14px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .sidebar a.part-link:first-of-type {
+    border-top: none;
+    margin-top: 0;
+  }
+
+  /* Main Content */
+  .main {
+    margin-left: 280px;
+    max-width: 900px;
+    padding: 48px 60px 120px;
+  }
+
+  /* Title */
+  h1 {
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-size: 16px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+    line-height: 1.6;
+  }
+
+  .meta-bar {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 48px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+
+  .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .meta-item strong {
+    color: var(--text);
+  }
+
+  /* Part Headers */
+  h2 {
+    font-size: 26px;
+    font-weight: 800;
+    margin: 56px 0 20px;
+    padding-top: 32px;
+    border-top: 2px solid var(--border);
+    scroll-margin-top: 24px;
+  }
+
+  h2 .part-num {
+    color: var(--accent);
+    margin-right: 4px;
+  }
+
+  h2 .part-time {
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 8px;
+  }
+
+  /* Section Headers */
+  h3 {
+    font-size: 19px;
+    font-weight: 700;
+    margin: 40px 0 14px;
+    color: var(--blue);
+    scroll-margin-top: 24px;
+  }
+
+  h4 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 28px 0 10px;
+    color: var(--purple);
+  }
+
+  p { margin-bottom: 14px; }
+
+  /* Talk Track Callouts */
+  .talk-track {
+    background: var(--surface);
+    border-left: 4px solid var(--green);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin: 16px 0 20px;
+    font-style: italic;
+    color: var(--text);
+    position: relative;
+  }
+
+  .talk-track::before {
+    content: "TALK TRACK";
+    position: absolute;
+    top: -10px;
+    left: 12px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--green);
+    font-style: normal;
+    background: var(--bg);
+    padding: 0 6px;
+  }
+
+  /* Steps */
+  ol {
+    margin: 12px 0 16px 0;
+    padding-left: 0;
+    list-style: none;
+    counter-reset: step;
+  }
+
+  ol > li {
+    counter-increment: step;
+    padding: 8px 12px 8px 48px;
+    position: relative;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  ol > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 14px;
+    top: 8px;
+    width: 24px;
+    height: 24px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  ul {
+    margin: 8px 0 14px 20px;
+    padding-left: 0;
+  }
+
+  ul li {
+    margin-bottom: 4px;
+    padding-left: 16px;
+    position: relative;
+  }
+
+  ul li::before {
+    content: "›";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  /* Code blocks */
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 14px 0 18px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+  }
+
+  :not(pre) > code {
+    background: var(--surface2);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--accent2);
+  }
+
+  /* Bold UI elements */
+  strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 13px;
+  }
+
+  th {
+    background: var(--surface2);
+    font-weight: 700;
+    text-align: left;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+
+  td {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  td:nth-child(2) {
+    text-align: center;
+  }
+
+  /* HR */
+  hr {
+    border: none;
+    border-top: 2px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* Architecture diagram */
+  .architecture {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 20px 0;
+    text-align: center;
+    overflow-x: auto;
+  }
+
+  .architecture pre {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    display: inline-block;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* Checklist section */
+  .checklist-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 20px;
+  }
+
+  .checklist-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .checklist-card h4 {
+    color: var(--text);
+    margin: 0 0 14px;
+    font-size: 16px;
+  }
+
+  .check-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .check-item .check {
+    color: var(--green);
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .check-item .section-ref {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  /* Print styles */
+  @media print {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 20px; }
+    body { background: white; color: #1a1a1a; font-size: 11px; }
+    h1 { -webkit-text-fill-color: #ff3621; font-size: 24px; }
+    h2 { font-size: 18px; }
+    h3 { font-size: 14px; }
+    .talk-track { background: #f5f5f5; border-left-color: #34d399; }
+    ol > li { background: #f9f9f9; border-color: #ddd; }
+    ol > li::before { background: #ff3621; }
+    pre { background: #f5f5f5; border-color: #ddd; }
+    table th { background: #f0f0f0; }
+    table td { background: white; }
+  }
+
+  /* Responsive */
+  @media (max-width: 1000px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 32px 24px 80px; }
+    .checklist-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-title">Demo Script</div>
+  <a href="#part0" class="part-link">Part 0 — Setup</a>
+  <a href="#part1" class="part-link">Part 1 — Business Problem</a>
+  <a href="#part2" class="part-link">Part 2 — Lakebase</a>
+  <a href="#s2-1">2.1 Project Overview</a>
+  <a href="#s2-2">2.2 Project Settings</a>
+  <a href="#s2-3">2.3 Branches</a>
+  <a href="#s2-4">2.4 Compute</a>
+  <a href="#s2-5">2.5 SQL Editor</a>
+  <a href="#s2-6">2.6 Tables Editor</a>
+  <a href="#s2-7">2.7 Synced Tables</a>
+  <a href="#s2-8">2.8 Lakehouse Sync</a>
+  <a href="#s2-9">2.9 Metrics</a>
+  <a href="#s2-10">2.10 Connection</a>
+  <a href="#s2-11">2.11 Data API</a>
+  <a href="#s2-12">2.12 Security</a>
+  <a href="#s2-13">2.13 Instant Restore</a>
+  <a href="#part3" class="part-link">Part 3 — Databricks Apps</a>
+  <a href="#s3-1">3.1 Apps Overview</a>
+  <a href="#s3-2">3.2 Overview Tab</a>
+  <a href="#s3-3">3.3 Resources</a>
+  <a href="#s3-4">3.4 Frameworks</a>
+  <a href="#s3-5">3.5 app.yaml</a>
+  <a href="#s3-6">3.6 Deployments</a>
+  <a href="#s3-7">3.7 Compute</a>
+  <a href="#s3-8">3.8 Auth</a>
+  <a href="#s3-9">3.9 Permissions</a>
+  <a href="#s3-10">3.10 Logs</a>
+  <a href="#s3-11">3.11 Insights</a>
+  <a href="#s3-12">3.12 Environment</a>
+  <a href="#s3-13">3.13 Tags</a>
+  <a href="#s3-14">3.14 Networking</a>
+  <a href="#s3-15">3.15 More Capabilities</a>
+  <a href="#part4" class="part-link">Part 4 — Live App</a>
+  <a href="#s4-1">4.1 Open the App</a>
+  <a href="#s4-2">4.2 Supplier Portal</a>
+  <a href="#s4-3">4.3 Warehouse Clerk</a>
+  <a href="#s4-4">4.4 Dashboard</a>
+  <a href="#part5" class="part-link">Part 5 — Architecture</a>
+  <a href="#checklist" class="part-link">Feature Checklist</a>
+</nav>
+
+<!-- Main Content -->
+<div class="main">
+
+<h1>Supplier Delivery Slot Booking</h1>
+<p class="subtitle">Lakebase &amp; Databricks Apps — Comprehensive Demo Script</p>
+
+<div class="meta-bar">
+  <div class="meta-item"><strong>Scenario:</strong>&nbsp;LiDAR sensor plant — supplier delivery coordination</div>
+  <div class="meta-item"><strong>Duration:</strong>&nbsp;45–60 min</div>
+  <div class="meta-item"><strong>Products:</strong>&nbsp;Lakebase + Apps</div>
+</div>
+
+<!-- ==================== PART 0 ==================== -->
+<h2 id="part0"><span class="part-num">Part 0</span> Setup <span class="part-time">Run Before Demo</span></h2>
+
+<p>Run these notebooks in order so the environment is fully provisioned:</p>
+<ol>
+  <li><code>_helper/01_generate_sap_data.py</code></li>
+  <li><code>_helper/02_generate_oltp_data.py</code></li>
+  <li><code>01_SAP_Data_Pipeline.py</code></li>
+  <li><code>02_Lakebase_Setup.py</code></li>
+  <li><code>04_App_Deployment.py</code></li>
+</ol>
+<p>Verify the app is in <strong>RUNNING</strong> state before you begin.</p>
+
+<!-- ==================== PART 1 ==================== -->
+<h2 id="part1"><span class="part-num">Part 1</span> The Business Problem <span class="part-time">2 min</span></h2>
+
+<div class="talk-track">
+"Our LiDAR plant receives hundreds of deliveries per week. Suppliers need to book dock slots in advance so the warehouse team can plan. Today this is done by email and phone — chaotic, double-bookings, no visibility. We're going to build a modern solution using two new Databricks products: <strong>Lakebase</strong> for the transactional backend, and <strong>Databricks Apps</strong> for the hosted web application."
+</div>
+
+<!-- ==================== PART 2 ==================== -->
+<h2 id="part2"><span class="part-num">Part 2</span> Lakebase Deep Dive <span class="part-time">25 min</span></h2>
+
+<!-- 2.1 -->
+<h3 id="s2-1">2.1 — Project Overview</h3>
+<ol>
+  <li>Open the <strong>Databricks workspace sidebar</strong> → click the <strong>App Switcher</strong> (grid icon, top-left) → select <strong>Lakebase</strong></li>
+  <li>You see the list of Lakebase projects. Click <strong><code>delivery-slot-booking</code></strong>.</li>
+</ol>
+<div class="talk-track">
+"Lakebase is a fully managed, PostgreSQL-compatible OLTP database built into Databricks. It gives us low-latency reads and writes for application workloads — something Delta Lake alone isn't designed for. Let me walk you through every capability."
+</div>
+
+<!-- 2.2 -->
+<h3 id="s2-2">2.2 — Project Settings</h3>
+<ol>
+  <li>Click <strong>Settings</strong> in the left sidebar.</li>
+  <li>Point out:
+    <ul>
+      <li><strong>Display name</strong> and <strong>Resource name</strong> (immutable project ID)</li>
+      <li><strong>PostgreSQL version</strong> — we're on Postgres 17</li>
+      <li><strong>Serverless usage policy</strong> — attribute compute costs to a budget policy</li>
+      <li><strong>Custom tags</strong> — key-value pairs for cost tracking and organization</li>
+      <li><strong>History window</strong> — currently set to 7 days. Controls how far back we can do point-in-time restore. Range is 2–30 days.</li>
+      <li><strong>Maintenance window</strong> — automatic Postgres minor version upgrades and security patches happen here</li>
+      <li><strong>Permissions</strong> — three levels: CAN CREATE, CAN USE, CAN MANAGE</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Everything is serverless — no VMs to manage, no patching to schedule manually. Lakebase handles Postgres upgrades automatically in the maintenance window you choose. The history window is key: it determines how far back you can restore or branch from."
+</div>
+
+<!-- 2.3 -->
+<h3 id="s2-3">2.3 — Branches (Git-Style Workflows)</h3>
+<ol>
+  <li>Click <strong>Branches</strong> in the left sidebar.</li>
+  <li>Show the branches table: <strong>production</strong> (default, protected) and <strong>dev</strong>.</li>
+  <li>Point out the parent relationship, compute status, data size, and last active time.</li>
+</ol>
+<div class="talk-track">
+"Lakebase has a unique branching model inspired by Git. Each branch is an instant, isolated copy of your database using copy-on-write storage — no data duplication. You only pay for the data that changes on the branch."
+</div>
+<ol start="4">
+  <li>Click <strong>production</strong> → point out the shield icon (protected branch).</li>
+</ol>
+<div class="talk-track">
+"The production branch is protected — it cannot be deleted, reset, or archived. This is your golden copy."
+</div>
+<ol start="5">
+  <li>Click <strong>dev</strong> branch → show that it was branched from production.</li>
+</ol>
+<div class="talk-track">
+"The dev branch was created from production. Developers can run migrations, test schema changes, and load test data here without touching production."
+</div>
+
+<h4>Create a new branch (live)</h4>
+<ol start="6">
+  <li>Click <strong>Create branch</strong> button.</li>
+  <li>Fill in:
+    <ul>
+      <li><strong>Name:</strong> <code>feature-returns</code></li>
+      <li><strong>Branch type:</strong> "Current data" (latest from production) — also show the <strong>"Past data"</strong> option and explain point-in-time branching</li>
+      <li><strong>Expiration:</strong> 7 days</li>
+    </ul>
+  </li>
+  <li>Click <strong>Create</strong>.</li>
+</ol>
+<div class="talk-track">
+"Branch creation is instant — even for terabytes of data. Under the hood, it's copy-on-write, so it takes zero extra storage initially. We can also branch from a specific point in time within our history window — that's how you'd recover from a bad migration."
+</div>
+
+<h4>Schema Diff</h4>
+<ol start="9">
+  <li>Go back to the <strong>dev</strong> branch → click <strong>Schema diff</strong>.</li>
+  <li>Show the side-by-side DDL comparison (green = added, red = removed).</li>
+</ol>
+<div class="talk-track">
+"Schema diff lets you compare any child branch against its parent. It shows exactly what DDL changed — added tables, altered columns, dropped indexes — making code review for database changes possible."
+</div>
+
+<h4>Branch Operations</h4>
+<ol start="11">
+  <li>Point out (don't execute): <strong>Reset from parent</strong>, <strong>Set as default</strong>, <strong>Delete branch</strong>.</li>
+</ol>
+<div class="talk-track">
+"You can reset a branch to re-sync with the parent's latest data — like a <code>git reset --hard</code>. You can also set any branch as the default, which exempts it from concurrency limits."
+</div>
+
+<!-- 2.4 -->
+<h3 id="s2-4">2.4 — Compute (Autoscaling &amp; Scale-to-Zero)</h3>
+<ol>
+  <li>Click the <strong>Computes</strong> tab on the production branch.</li>
+  <li>Show the primary compute: autoscaling range (e.g., 8–16 CU), scale-to-zero enabled.</li>
+</ol>
+<div class="talk-track">
+"Lakebase separates compute from storage. Each Compute Unit is 2 GB of RAM. Our production compute autoscales between 8 and 16 CU — the system adjusts dynamically based on workload without restarts or connection interruptions."
+</div>
+<ol start="3">
+  <li>Click <strong>Edit</strong> on the primary compute → show:
+    <ul>
+      <li>Min/Max CU sliders</li>
+      <li>Scale-to-zero toggle and inactivity timeout (currently 24 hours)</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Scale-to-zero means when there's no activity, compute suspends entirely — zero cost. When a new query arrives, it reactivates in a few hundred milliseconds. The inactivity timeout is configurable down to 60 seconds."
+</div>
+
+<h4>Read Replicas</h4>
+<ol start="4">
+  <li>Click <strong>Add Read Replica</strong>.</li>
+  <li>Show the configuration form (don't necessarily create one).</li>
+</ol>
+<div class="talk-track">
+"You can add up to 6 read replicas per branch. Each replica shares the same storage layer — instant creation, no data copying. They have independent autoscaling and scale-to-zero settings. This is perfect for separating analytical read workloads from transactional writes."
+</div>
+
+<!-- 2.5 -->
+<h3 id="s2-5">2.5 — SQL Editor</h3>
+<ol>
+  <li>Click <strong>SQL Editor</strong> in the left sidebar.</li>
+  <li>Select branch: <strong>production</strong>, database: <strong>delivery_app</strong>.</li>
+  <li>Run: <code>\dt</code> to list all tables.</li>
+</ol>
+<div class="talk-track">
+"The SQL Editor supports psql meta-commands. Here we see our OLTP tables: <code>dock_slot</code> and <code>delivery_booking</code>, plus the synced tables <code>ekko</code> and <code>ekpo_enriched</code> from the Lakehouse."
+</div>
+<ol start="4">
+  <li>Run a query:</li>
+</ol>
+<pre><code>SELECT b.booking_id, b.po_number, b.status, b.driver_name,
+       ds.dock_id, ds.slot_date, ds.time_window_start
+FROM delivery_booking b
+JOIN dock_slot ds ON b.slot_id = ds.slot_id
+WHERE b.status = 'confirmed'
+ORDER BY ds.slot_date, ds.time_window_start
+LIMIT 10;</code></pre>
+<ol start="5">
+  <li>Show the result set. Click <strong>Explain</strong> to show the query plan.</li>
+</ol>
+<div class="talk-track">
+"Explain shows the estimated execution plan — row counts, join strategies, index usage."
+</div>
+<ol start="6">
+  <li>Click <strong>Analyze</strong> to run EXPLAIN ANALYZE.</li>
+</ol>
+<div class="talk-track">
+"Analyze actually executes the query and shows real timings and row counts — essential for performance tuning."
+</div>
+<ol start="7">
+  <li>Click the <strong>Export</strong> button → show JSON, CSV, XLSX options.</li>
+</ol>
+<div class="talk-track">
+"Results can be exported directly to JSON, CSV, or Excel."
+</div>
+<ol start="8">
+  <li>Show <strong>multiple statement execution</strong> — run two queries separated by semicolons and point out the numbered result tabs.</li>
+</ol>
+
+<h4>Extensions</h4>
+<ol start="9">
+  <li>Run:</li>
+</ol>
+<pre><code>SELECT * FROM pg_available_extensions
+WHERE name IN ('vector', 'postgis', 'pg_stat_statements', 'pg_graphql')
+ORDER BY name;</code></pre>
+<div class="talk-track">
+"Lakebase supports 46 PostgreSQL extensions including pgvector for AI embeddings, PostGIS for geospatial, pg_graphql for GraphQL, and pg_stat_statements for query performance analysis."
+</div>
+
+<!-- 2.6 -->
+<h3 id="s2-6">2.6 — Tables Editor</h3>
+<ol>
+  <li>Click <strong>Tables</strong> in the left sidebar.</li>
+  <li>Navigate to <strong>delivery_app → public → dock_slot</strong>.</li>
+  <li>Show the table grid with data.</li>
+</ol>
+<div class="talk-track">
+"The Tables Editor gives you a spreadsheet-like view of your data."
+</div>
+<ol start="4">
+  <li><strong>Inline editing:</strong> Click a cell (e.g., <code>capacity</code>), change the value, show the "Save x changes" button. (Revert it.)</li>
+  <li><strong>Add record:</strong> Click "Add record" — show DEFAULT fields auto-populated.</li>
+  <li><strong>Delete records:</strong> Check a few rows → show "Delete x records" button.</li>
+  <li><strong>Filters:</strong> Add a filter (e.g., <code>dock_id = DOCK-A</code>), show how it creates a saved View.</li>
+  <li><strong>Column toggle:</strong> Hide/show columns.</li>
+  <li><strong>Export:</strong> Click export → JSON, CSV, XLSX.</li>
+</ol>
+
+<h4>Database Studio</h4>
+<ol start="10">
+  <li>Click <strong>Database studio</strong> (top navbar).</li>
+  <li>Browse: schemas, tables, views, roles, and policies in a tree view.</li>
+</ol>
+<div class="talk-track">
+"Database Studio gives you a single pane of glass over all database objects — schemas, tables, views, roles, and security policies."
+</div>
+
+<!-- 2.7 -->
+<h3 id="s2-7">2.7 — Synced Tables (Lakehouse → Lakebase)</h3>
+<ol>
+  <li>Navigate to <strong>Unity Catalog</strong> (switch back to main Databricks workspace).</li>
+  <li>Find the <code>ekko</code> table in the catalog browser.</li>
+  <li>Click on it → show the <strong>Overview</strong> tab with sync information.</li>
+</ol>
+<div class="talk-track">
+"Synced Tables are how we bridge the Lakehouse and Lakebase. Our SAP purchase order data lives in Delta Lake. We've created a one-way sync that replicates it into Lakebase as read-only PostgreSQL tables."
+</div>
+<ol start="4">
+  <li>Point out:
+    <ul>
+      <li><strong>Sync mode</strong> — Snapshot vs. Triggered vs. Continuous</li>
+      <li><strong>Pipeline status</strong> — the underlying Lakeflow Declarative Pipeline</li>
+      <li><strong>Last sync timestamp</strong></li>
+      <li><strong>"Sync now" button</strong> for manual trigger</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"There are three sync modes: <strong>Snapshot</strong> does a full copy — best when &gt;10% of rows change. <strong>Triggered</strong> does incremental updates on a schedule, using Change Data Feed. <strong>Continuous</strong> gives near-real-time sync with as low as 15-second intervals. Our demo uses Snapshot, but for production you'd likely use Triggered or Continuous."
+</div>
+
+<!-- 2.8 -->
+<h3 id="s2-8">2.8 — Lakehouse Sync (Lakebase → Lakehouse)</h3>
+<ol>
+  <li>Go back to <strong>Lakebase</strong> → select the production branch.</li>
+  <li>Click the <strong>Lakehouse sync</strong> tab.</li>
+</ol>
+<div class="talk-track">
+"This is the reverse direction — Lakebase to Lakehouse. It continuously replicates Lakebase Postgres tables into Unity Catalog as managed Delta tables using CDC (Change Data Capture). It uses the <code>wal2delta</code> Postgres extension under the hood."
+</div>
+<ol start="3">
+  <li>If enabled, show:
+    <ul>
+      <li>Overall sync status ("Syncing")</li>
+      <li>Sub-tabs for Schemas and Tables</li>
+      <li>Per-table: source name, destination table, status, Committed LSN, Last Sync timestamp</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Every insert, update, and delete in Lakebase is captured and written to Delta tables in SCD Type 2 format — you get full history. System columns like <code>_pg_change_type</code>, <code>_pg_lsn</code>, and <code>_timestamp</code> are added automatically. This means your BI dashboards and ML models can consume real-time transactional data without querying Lakebase directly."
+</div>
+<ol start="4">
+  <li>If not enabled, show the <strong>"Start sync"</strong> button and walk through the configuration:
+    <ul>
+      <li>Select source database and schema</li>
+      <li>Select target Unity Catalog catalog and schema</li>
+      <li>Mention the <code>REPLICA IDENTITY FULL</code> requirement</li>
+    </ul>
+  </li>
+</ol>
+
+<!-- 2.9 -->
+<h3 id="s2-9">2.9 — Metrics Dashboard</h3>
+<ol>
+  <li>Click <strong>Metrics</strong> in the left sidebar.</li>
+  <li>Select branch: <strong>production</strong>, compute: primary.</li>
+  <li>Set time period to <strong>Last hour</strong> (or Last day if more data).</li>
+</ol>
+<div class="talk-track">
+"The Metrics Dashboard gives you full observability with 19 metrics."
+</div>
+<ol start="4">
+  <li>Walk through the key charts:
+    <ul>
+      <li><strong>Allocated vs Used CPU</strong> — shows autoscaling in action</li>
+      <li><strong>Allocated vs Used vs Cached RAM</strong> — memory utilization</li>
+      <li><strong>Active / Idle / Total / Max Connections</strong> — connection management</li>
+      <li><strong>Database Size</strong> — logical data size</li>
+      <li><strong>Rows Inserted / Updated / Deleted</strong> — write throughput</li>
+      <li><strong>Deadlocks</strong> — should be zero in healthy systems</li>
+      <li><strong>Local File Cache Hit Rate</strong> — how efficiently the cache serves reads</li>
+      <li><strong>Working Set Size</strong> (5m, 15m, 1h) — how much data is actively accessed</li>
+      <li><strong>Replication Delay</strong> (bytes and seconds) — relevant for read replicas</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Notice how CPU and RAM scale automatically. When the app is idle, you'll see metrics drop to zero — that's scale-to-zero in action. No cost when there's no workload."
+</div>
+
+<!-- 2.10 -->
+<h3 id="s2-10">2.10 — Connection &amp; Credentials</h3>
+<ol>
+  <li>Click <strong>Connect</strong> (on the production branch).</li>
+  <li>Show the Connect dialog:
+    <ul>
+      <li>Branch, database, and role dropdowns</li>
+      <li>Compute selector (primary or read replica)</li>
+      <li><strong>Connection string</strong> — copy button</li>
+      <li><strong>Pooler connection string</strong> (PgBouncer)</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Lakebase supports two auth methods: <strong>OAuth tokens</strong> for Databricks identities — these are short-lived (60 min) and auto-refreshed. And <strong>native Postgres password roles</strong> for traditional app authentication. The built-in PgBouncer connection pooler supports up to 10,000 concurrent connections in transaction mode — ideal for serverless apps and web APIs."
+</div>
+<ol start="3">
+  <li>Mention supported clients: psql, pgAdmin, DBeaver, and programmatic access via Python, JavaScript, Go, .NET.</li>
+</ol>
+
+<!-- 2.11 -->
+<h3 id="s2-11">2.11 — Data API (PostgREST)</h3>
+<ol>
+  <li>Click <strong>Data API</strong> in the left sidebar.</li>
+  <li>Show the Enable/Configure screen.</li>
+</ol>
+<div class="talk-track">
+"The Data API exposes your Lakebase tables as a RESTful API via PostgREST — no backend code needed. You get automatic CRUD endpoints with filtering, sorting, pagination, and joins via foreign keys. It auto-generates an OpenAPI 3.0 spec. You can configure exposed schemas, max rows, CORS settings, and row-level security for multi-tenant isolation."
+</div>
+<ol start="3">
+  <li>Point out configuration options: exposed schemas, max rows, CORS, OpenAPI endpoint.</li>
+</ol>
+
+<!-- 2.12 -->
+<h3 id="s2-12">2.12 — Security Features</h3>
+<div class="talk-track">
+"A few security features worth mentioning:<br><br>
+&bull; <strong>Encryption at rest</strong> with optional customer-managed keys (CMK) via AWS KMS, Azure Key Vault, or Google Cloud KMS<br>
+&bull; <strong>SSL required</strong> on all connections (<code>sslmode=require</code>)<br>
+&bull; <strong>Inbound Private Link</strong> for keeping Postgres traffic off the public internet<br>
+&bull; <strong>IP access lists</strong> for network-level restriction<br>
+&bull; <strong>Row-Level Security</strong> via the Data API for multi-tenant data isolation<br>
+&bull; <strong>PostgreSQL GRANT/REVOKE</strong> for fine-grained table-level permissions<br>
+&bull; <strong>Role management</strong> in Database Studio — create OAuth roles for Databricks identities or native password roles"
+</div>
+
+<!-- 2.13 -->
+<h3 id="s2-13">2.13 — Instant Restore</h3>
+<div class="talk-track">
+"One last Lakebase feature: <strong>Instant Restore</strong>. Using our 7-day history window, we can restore the database to any point in time — or more practically, create a branch from any past moment. This is copy-on-write, so it's instant even at terabyte scale. It's how you'd recover from a bad migration or data corruption."
+</div>
+
+<hr>
+
+<!-- ==================== PART 3 ==================== -->
+<h2 id="part3"><span class="part-num">Part 3</span> Databricks Apps Deep Dive <span class="part-time">20 min</span></h2>
+
+<!-- 3.1 -->
+<h3 id="s3-1">3.1 — Apps Overview</h3>
+<ol>
+  <li>Navigate to <strong>Databricks Apps</strong> in the workspace sidebar (or App Switcher).</li>
+  <li>Show the list of apps. Click <strong><code>delivery-slot-booking</code></strong>.</li>
+</ol>
+<div class="talk-track">
+"Databricks Apps is a managed application hosting platform. You build your app in any framework — Python or Node.js — and Databricks handles deployment, authentication, networking, and compute. No Kubernetes, no cloud infrastructure to manage."
+</div>
+
+<!-- 3.2 -->
+<h3 id="s3-2">3.2 — Overview Tab</h3>
+<ol>
+  <li>On the app detail page, point out:
+    <ul>
+      <li><strong>Status:</strong> RUNNING (green indicator)</li>
+      <li><strong>App URL:</strong> <code>https://delivery-slot-booking-&lt;workspace-id&gt;.&lt;region&gt;.databricksapps.com</code></li>
+      <li><strong>Deployment source</strong> — workspace folder</li>
+      <li><strong>Resources</strong> listed: SQL Warehouse</li>
+      <li><strong>Service principal</strong> — auto-created, dedicated to this app</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Every app gets an auto-generated HTTPS URL with TLS 1.3. It also gets a dedicated service principal — this is the identity the app uses to access Databricks resources. The URL is immutable after creation."
+</div>
+
+<!-- 3.3 -->
+<h3 id="s3-3">3.3 — Resources</h3>
+<ol>
+  <li>Scroll to the <strong>Resources</strong> section.</li>
+  <li>Show the configured SQL Warehouse resource.</li>
+</ol>
+<div class="talk-track">
+"Resources are how Apps connect to Databricks services. There are 12 resource types: Lakebase databases, SQL Warehouses, Model Serving Endpoints, Genie Spaces, Secrets, Unity Catalog tables, Vector Search indexes, MLflow experiments, Lakeflow Jobs, other Apps, UC connections, and UDFs. Each resource gets a default key that can be referenced in <code>app.yaml</code> via <code>valueFrom</code> — credentials are injected automatically as environment variables. No secrets in code."
+</div>
+<ol start="3">
+  <li>Mention: "Our app also uses Lakebase directly via environment variables — the Postgres connection details are in <code>app.yaml</code>."</li>
+</ol>
+
+<!-- 3.4 -->
+<h3 id="s3-4">3.4 — Supported Frameworks</h3>
+<div class="talk-track">
+"Databricks Apps supports:<br><br>
+&bull; <strong>Python:</strong> Streamlit, Dash, Gradio, Flask, FastAPI, Shiny<br>
+&bull; <strong>Node.js:</strong> React, Angular, Svelte, Express<br>
+&bull; <strong>Mixed:</strong> Python backend + Node.js frontend together<br><br>
+Our app uses <strong>FastAPI</strong> for the backend API and <strong>React + TypeScript + TailwindCSS</strong> for the frontend, built with Vite. The <code>app.yaml</code> runs <code>uvicorn app:app --workers 4</code>."
+</div>
+
+<!-- 3.5 -->
+<h3 id="s3-5">3.5 — app.yaml Configuration</h3>
+<ol>
+  <li>Open the app source code in the workspace (or show it on screen).</li>
+  <li>Walk through <code>app.yaml</code>:</li>
+</ol>
+<pre><code>command:        # Custom startup command (uvicorn with 4 workers)
+env:            # Environment variables — Lakebase connection params
+resources:      # SQL warehouse with CAN_USE permission</code></pre>
+<div class="talk-track">
+"The <code>app.yaml</code> is entirely optional — defaults work for simple apps. But it lets you customize the startup command, define environment variables (either hardcoded or referencing resources via <code>valueFrom</code>), and declare resource dependencies. Never put secrets directly in <code>value</code> — use a Secret resource with <code>valueFrom</code>."
+</div>
+
+<!-- 3.6 -->
+<h3 id="s3-6">3.6 — Deployments Tab</h3>
+<ol>
+  <li>Click the <strong>Deployments</strong> tab.</li>
+  <li>Show the deployment history — timestamps, status, source.</li>
+</ol>
+<div class="talk-track">
+"Every deployment is versioned. You can see the full history here — when it was deployed, from what source, and its status. Redeploying after a code change doesn't require recreating the app."
+</div>
+<ol start="3">
+  <li>Mention deployment sources:
+    <ul>
+      <li><strong>Workspace folder</strong> (what we're using)</li>
+      <li><strong>Git repository</strong> (GitHub, GitLab, Bitbucket, Azure DevOps) — supports branches, tags, commit SHAs</li>
+      <li><strong>Declarative Automation Bundles (DABs)</strong> — infrastructure-as-code in <code>databricks.yml</code></li>
+      <li><strong>GitHub Actions</strong> for CI/CD</li>
+    </ul>
+  </li>
+</ol>
+
+<!-- 3.7 -->
+<h3 id="s3-7">3.7 — Compute Configuration</h3>
+<ol>
+  <li>Click the <strong>Settings</strong> tab → show the <strong>Compute</strong> section.</li>
+</ol>
+<div class="talk-track">
+"Apps run on serverless infrastructure. Two sizes: <strong>Medium</strong> (2 vCPUs, 6 GB RAM, 0.5 DBU/hour) and <strong>Large</strong> (4 vCPUs, 12 GB RAM, 1 DBU/hour). You can change the size seamlessly — the app keeps running on the old size until the new one is ready. Stopped apps cost nothing."
+</div>
+
+<!-- 3.8 -->
+<h3 id="s3-8">3.8 — Authentication &amp; Authorization</h3>
+<ol>
+  <li>Click the <strong>Authorization</strong> tab (if visible) or discuss:</li>
+</ol>
+<div class="talk-track">
+"Apps support two identity models:<br><br>
+1. <strong>Service Principal identity</strong> — the app acts as itself. The <code>DATABRICKS_CLIENT_ID</code> and <code>DATABRICKS_CLIENT_SECRET</code> are auto-injected. This is the default.<br><br>
+2. <strong>On-Behalf-of-User</strong> (Public Preview) — the app acts with the logged-in user's identity and permissions. This enforces Unity Catalog policies including row-level filters and column masks. Users see an OAuth consent screen on first access.<br><br>
+Our app uses the service principal model for Lakebase access — the app authenticates with a Postgres password role."
+</div>
+
+<!-- 3.9 -->
+<h3 id="s3-9">3.9 — Permissions</h3>
+<ol>
+  <li>Click the <strong>Share</strong> button on the Overview tab.</li>
+  <li>Show the permissions dialog:
+    <ul>
+      <li><strong>CAN MANAGE</strong> — full control (settings, permissions, edit, delete)</li>
+      <li><strong>CAN USE</strong> — can run and interact, cannot modify</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Sharing is simple: add users, groups, or service principals with either CAN MANAGE or CAN USE. You can also toggle organization-wide access — 'Anyone in my organization can use' grants CAN USE to all account users."
+</div>
+
+<!-- 3.10 -->
+<h3 id="s3-10">3.10 — Logs</h3>
+<ol>
+  <li>Click the <strong>Logs</strong> tab.</li>
+  <li>Show the stdout/stderr output — FastAPI startup logs, request logs.</li>
+</ol>
+<div class="talk-track">
+"Application logs are available here in real time — stdout and stderr from your app process. You can also access them by appending <code>/logz</code> to the app URL, or stream them via CLI with <code>databricks apps logs</code>. Note: logs are not persisted when compute shuts down."
+</div>
+<ol start="3">
+  <li>Mention the <strong>Telemetry</strong> feature:</li>
+</ol>
+<div class="talk-track">
+"For persistent observability, you can enable <strong>App Telemetry</strong> (Beta) — it collects OpenTelemetry traces, logs, and metrics and persists them to Unity Catalog tables. You get <code>otel_logs</code>, <code>otel_spans</code>, and <code>otel_metrics</code> tables for long-term analysis and dashboarding."
+</div>
+
+<!-- 3.11 -->
+<h3 id="s3-11">3.11 — Insights Tab</h3>
+<ol>
+  <li>Click the <strong>Insights</strong> tab (if available, Beta).</li>
+</ol>
+<div class="talk-track">
+"Insights tracks unique user access events, app health status, and service health indicators — useful for understanding adoption and uptime."
+</div>
+
+<!-- 3.12 -->
+<h3 id="s3-12">3.12 — Environment Tab</h3>
+<ol>
+  <li>Click the <strong>Environment</strong> tab.</li>
+  <li>Show the runtime environment: installed packages, environment variables.</li>
+</ol>
+<div class="talk-track">
+"The Environment tab shows exactly what's running — Python/Node.js version, installed packages, and all environment variables. Useful for debugging dependency issues."
+</div>
+
+<!-- 3.13 -->
+<h3 id="s3-13">3.13 — Tags</h3>
+<ol>
+  <li>Show the <strong>Tags</strong> section in the right panel.</li>
+</ol>
+<div class="talk-track">
+"Tags let you organize and categorize apps with key-value pairs. Governed tags can indicate certification status or lifecycle stage — useful for enterprise app catalogs."
+</div>
+
+<!-- 3.14 -->
+<h3 id="s3-14">3.14 — Networking</h3>
+<div class="talk-track">
+"On the networking side:<br><br>
+&bull; <strong>IP Access Lists</strong> restrict who can reach your app<br>
+&bull; <strong>Front-End Private Connectivity</strong> routes traffic through your VPC instead of the public internet<br>
+&bull; <strong>Network Connectivity Configurations</strong> give you stable public IPs for outbound traffic<br>
+&bull; <strong>Network Policies</strong> (Enterprise tier) enforce egress restrictions — prevent data exfiltration by limiting which external domains the app can reach<br>
+&bull; All traffic uses <strong>TLS 1.3</strong>, control plane uses <strong>mutual TLS</strong>, and ephemeral storage is <strong>AES-256 encrypted</strong>"
+</div>
+
+<!-- 3.15 -->
+<h3 id="s3-15">3.15 — Additional Capabilities</h3>
+<div class="talk-track">
+"A few more things worth knowing:<br><br>
+&bull; <strong>Embedding:</strong> You can embed any Databricks App in an external website via iframe<br>
+&bull; <strong>MCP Server hosting:</strong> Apps can host Model Context Protocol servers for AI agent integration<br>
+&bull; <strong>State management:</strong> Apps don't preserve in-memory state across restarts — use Lakebase, SQL tables, or UC Volumes for persistence<br>
+&bull; <strong>CI/CD:</strong> Full support for GitHub Actions, DABs, Terraform, REST API, and Python SDK<br>
+&bull; <strong>Limits:</strong> 100 apps per workspace, 10 MB max file size, Medium or Large compute"
+</div>
+
+<hr>
+
+<!-- ==================== PART 4 ==================== -->
+<h2 id="part4"><span class="part-num">Part 4</span> The Application in Action <span class="part-time">10 min</span></h2>
+
+<!-- 4.1 -->
+<h3 id="s4-1">4.1 — Open the App</h3>
+<ol>
+  <li>Click the <strong>app URL</strong> from the Overview tab (or copy/paste it).</li>
+  <li>The app opens in a new browser tab — dark "mercedes" themed UI.</li>
+</ol>
+
+<!-- 4.2 -->
+<h3 id="s4-2">4.2 — Supplier Portal (Book a Slot)</h3>
+<ol>
+  <li>You're on the <strong>Supplier Portal</strong> page (<code>/</code>).</li>
+  <li><strong>Step 1 — Select Date:</strong> The calendar shows available dates fetched from Lakebase (<code>GET /api/slots/dates</code>). Pick a date.</li>
+  <li><strong>Step 2 — Choose Slot:</strong> A grid appears showing dock IDs (DOCK-A through DOCK-E) vs time windows (06:00–08:00 through 20:00–22:00). Green = available, Grey = full. Click an available slot.</li>
+  <li><strong>Step 3 — Select PO:</strong> A dropdown shows Purchase Orders fetched from the <strong>synced <code>ekko</code> table</strong> in Lakebase. Select a PO number.</li>
+  <li><strong>Step 4 — Confirm:</strong> Enter truck plate and driver name → Submit.</li>
+</ol>
+<div class="talk-track">
+"Notice the data flow: slot availability comes from the <code>dock_slot</code> table in Lakebase (OLTP). The PO dropdown comes from the <code>ekko</code> table that was <strong>synced from Delta Lake</strong> into Lakebase. The booking INSERT goes back to Lakebase. All sub-millisecond latency — this is why you need an OLTP database for application workloads."
+</div>
+
+<!-- 4.3 -->
+<h3 id="s4-3">4.3 — Warehouse Clerk (Manage Bookings)</h3>
+<ol>
+  <li>Click <strong>Warehouse Clerk</strong> in the nav bar (<code>/clerk</code>).</li>
+  <li>Select a PO from the dropdown.</li>
+  <li>Show the <strong>PO Header</strong> — vendor, PO type, date, purchasing org (from synced <code>ekko</code>).</li>
+  <li>Show the <strong>Line Items</strong> table — LiDAR materials, quantities, prices (from synced <code>ekpo_enriched</code>).</li>
+  <li>Below, show <strong>Delivery Bookings</strong> linked to this PO.</li>
+  <li>Click through the status workflow: <strong>Requested → Confirmed → Checked In → Completed</strong>.</li>
+  <li>Show the <strong>Cancel</strong> action on a booking.</li>
+</ol>
+<div class="talk-track">
+"The clerk sees a unified view: SAP master data from the Lakehouse (via synced tables) and transactional booking data from Lakebase — all served by the same PostgreSQL connection. Status transitions are enforced by the API with validation logic."
+</div>
+
+<!-- 4.4 -->
+<h3 id="s4-4">4.4 — Dashboard</h3>
+<ol>
+  <li>Click <strong>Dashboard</strong> in the nav bar (<code>/dashboard</code>).</li>
+  <li>Show:
+    <ul>
+      <li><strong>Stat cards</strong> — total bookings by status (requested, confirmed, checked_in, completed, cancelled)</li>
+      <li><strong>Dock Utilization</strong> — progress bars per dock with green/yellow/red coloring</li>
+      <li><strong>Recent Activity</strong> — last 10 bookings table</li>
+    </ul>
+  </li>
+  <li>Wait 30 seconds to see the auto-refresh.</li>
+</ol>
+<div class="talk-track">
+"The dashboard aggregates data from a single summary API call that runs several PostgreSQL queries. It auto-refreshes every 30 seconds. This is the kind of real-time operational view that's only possible with an OLTP database — you wouldn't run these queries against Delta Lake on every page load."
+</div>
+
+<hr>
+
+<!-- ==================== PART 5 ==================== -->
+<h2 id="part5"><span class="part-num">Part 5</span> Architecture Recap <span class="part-time">3 min</span></h2>
+
+<div class="architecture">
+<pre>
+┌─────────────────────┐     Sync (Delta → PG)     ┌───────────────────────┐
+│   Unity Catalog     │ ─────────────────────────→ │      Lakebase         │
+│   (Delta Lake)      │                            │   (PostgreSQL 17)     │
+│                     │ ←───────────────────────── │                       │
+│  • ekko             │     Lakehouse Sync         │  • dock_slot          │
+│  • ekpo_enriched    │     (PG → Delta CDC)       │  • delivery_booking   │
+│  • dock_slot (gold) │                            │  • ekko (synced, RO)  │
+│  • delivery_booking │                            │  • ekpo_enriched (RO) │
+└─────────────────────┘                            └───────────┬───────────┘
+                                                               │
+                                                         asyncpg (SSL)
+                                                               │
+                                                   ┌───────────┴───────────┐
+                                                   │   Databricks App      │
+                                                   │   FastAPI + React     │
+                                                   │   (Serverless)        │
+                                                   └───────────┬───────────┘
+                                                               │
+                                                          HTTPS/TLS 1.3
+                                                               │
+                                                   ┌───────────┴───────────┐
+                                                   │   Users (Browser)     │
+                                                   │  • Suppliers          │
+                                                   │  • Warehouse Clerks   │
+                                                   │  • Plant Managers     │
+                                                   └───────────────────────┘
+</pre>
+</div>
+
+<div class="talk-track">
+"To summarize: <strong>Lakebase</strong> gives us a fully managed PostgreSQL database with autoscaling, scale-to-zero, instant branching, synced tables from the Lakehouse, Lakehouse Sync back to Delta, 46 extensions, a built-in Data API, connection pooling, metrics, and enterprise security — all serverless. <strong>Databricks Apps</strong> gives us managed hosting for any Python or Node.js web framework with built-in authentication, resource management, telemetry, and zero infrastructure to manage. Together, they turn Databricks into a full-stack application platform — from data lake to production app in a single control plane."
+</div>
+
+<hr>
+
+<!-- ==================== CHECKLIST ==================== -->
+<h2 id="checklist"><span class="part-num"></span> Feature Checklist</h2>
+
+<div class="checklist-grid">
+  <div class="checklist-card">
+    <h4 style="color: var(--blue);">Lakebase Features</h4>
+    <div class="check-item"><span class="check">&#10003;</span> Project creation &amp; settings <span class="section-ref">2.1, 2.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> PostgreSQL version selection <span class="section-ref">2.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Serverless usage policy <span class="section-ref">2.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Custom tags <span class="section-ref">2.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> History window <span class="section-ref">2.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Maintenance window <span class="section-ref">2.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Permissions (CREATE/USE/MANAGE) <span class="section-ref">2.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Branches (create, protect, default) <span class="section-ref">2.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Branch from point in time <span class="section-ref">2.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Schema diff <span class="section-ref">2.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Branch expiration <span class="section-ref">2.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Reset from parent <span class="section-ref">2.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Autoscaling compute <span class="section-ref">2.4</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Scale-to-zero <span class="section-ref">2.4</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Read replicas <span class="section-ref">2.4</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> SQL Editor (query, explain, analyze) <span class="section-ref">2.5</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> psql meta-commands <span class="section-ref">2.5</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Export results (JSON/CSV/XLSX) <span class="section-ref">2.5</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> PostgreSQL extensions (46) <span class="section-ref">2.5</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Tables Editor (inline edit, CRUD) <span class="section-ref">2.6</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Filters &amp; Views <span class="section-ref">2.6</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Database Studio <span class="section-ref">2.6</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Synced Tables (Lakehouse → Lakebase) <span class="section-ref">2.7</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Sync modes (Snap/Trig/Continuous) <span class="section-ref">2.7</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Lakehouse Sync (Lakebase → Lakehouse) <span class="section-ref">2.8</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> CDC / wal2delta / SCD Type 2 <span class="section-ref">2.8</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Metrics dashboard (19 metrics) <span class="section-ref">2.9</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Connection strings &amp; Connect dialog <span class="section-ref">2.10</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> OAuth &amp; native password auth <span class="section-ref">2.10</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Connection pooling (PgBouncer) <span class="section-ref">2.10</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Data API (PostgREST) <span class="section-ref">2.11</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Row-Level Security <span class="section-ref">2.11, 2.12</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> CMK encryption <span class="section-ref">2.12</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Private Link / IP access lists <span class="section-ref">2.12</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Instant Restore / PITR <span class="section-ref">2.13</span></div>
+  </div>
+
+  <div class="checklist-card">
+    <h4 style="color: var(--accent);">Databricks Apps Features</h4>
+    <div class="check-item"><span class="check">&#10003;</span> App creation (custom &amp; templates) <span class="section-ref">3.1, 3.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> App URL &amp; status <span class="section-ref">3.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Service principal (auto-created) <span class="section-ref">3.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Resources (12 types) <span class="section-ref">3.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Supported frameworks (Python + Node.js) <span class="section-ref">3.4</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> app.yaml (command, env, resources) <span class="section-ref">3.5</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Environment variables (system + custom) <span class="section-ref">3.5</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Deployment history &amp; versioning <span class="section-ref">3.6</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Deployment sources (workspace/Git/DABs) <span class="section-ref">3.6</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> CI/CD (GitHub Actions, Terraform) <span class="section-ref">3.6</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Compute (Medium/Large, cost) <span class="section-ref">3.7</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Auth: service principal identity <span class="section-ref">3.8</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Auth: on-behalf-of-user (OAuth) <span class="section-ref">3.8</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Permissions (CAN MANAGE / CAN USE) <span class="section-ref">3.9</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Sharing (users, groups, org-wide) <span class="section-ref">3.9</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Logs (stdout/stderr, /logz) <span class="section-ref">3.10</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Telemetry (OpenTelemetry, UC tables) <span class="section-ref">3.10</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Insights (Beta) <span class="section-ref">3.11</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Environment tab <span class="section-ref">3.12</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Tags (key-value, governed) <span class="section-ref">3.13</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Networking (IP lists/PL/policies) <span class="section-ref">3.14</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Embedding via iframe <span class="section-ref">3.15</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> MCP Server hosting <span class="section-ref">3.15</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> State management (Lakebase) <span class="section-ref">3.15</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Limits (100 apps, 10 MB files) <span class="section-ref">3.15</span></div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

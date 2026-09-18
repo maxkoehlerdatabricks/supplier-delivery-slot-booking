@@ -14,11 +14,11 @@
 
 # COMMAND ----------
 
-# Configuration
-CATALOG = "classic_stable_4rp118_catalog"
-SCHEMA = "delivery_slot_booking_ppmaxkohler"
-FULL_SCHEMA = f"{CATALOG}.{SCHEMA}"
+# MAGIC %run ../config
 
+# COMMAND ----------
+
+# Configuration comes from the shared ../config notebook (CATALOG, SCHEMA, FULL_SCHEMA)
 print(f"Full schema: {FULL_SCHEMA}")
 
 # COMMAND ----------

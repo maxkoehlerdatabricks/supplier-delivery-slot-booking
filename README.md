@@ -1,189 +1,161 @@
 # Supplier Delivery Slot Booking
 
-A demo application for a **LiDAR sensor manufacturing plant** that provides:
-- **Supplier Portal** — Book delivery time slots at the plant's loading docks
-- **Warehouse Clerk View** — Look up PO details and confirm goods receipt
-- **Dashboard** — Real-time overview of bookings and slot utilization
+A demo application for a **LiDAR sensor manufacturing plant** that showcases the
+**Databricks Lakehouse + Lakebase + Apps** stack end to end:
 
-Built on **Databricks** with SAP MM data replicated to Delta Lake, OLTP tables in **Lakebase** (managed PostgreSQL), and a **React + FastAPI** web application deployed as a Databricks App.
+- **Lakehouse** — SAP MM purchasing data landed and refined through a **medallion
+  pipeline** (bronze → silver → gold), governed in **Unity Catalog**, and surfaced in an
+  **AI/BI dashboard**.
+- **Lakebase** — a managed PostgreSQL OLTP database for transactional booking data, with
+  Git-style **branching** and **real synced tables** replicating the Lakehouse gold data.
+- **Databricks Apps** — a **React + FastAPI** web app deployed as a managed Databricks App.
+
+The app provides:
+- **Supplier Portal** — book delivery time slots at the plant's loading docks
+- **Warehouse Clerk View** — look up PO details and manage goods receipt
+- **Dashboard** — real-time overview of bookings and slot utilization
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Databricks Workspace                        │
-│                                                                     │
-│  ┌──────────────────┐     ┌──────────────────┐                     │
-│  │  Delta Lake       │     │  Lakebase (PG)   │                     │
-│  │                   │     │                   │                     │
-│  │  ekko (PO hdr)   │────▶│  ekko (synced)   │                     │
-│  │  ekpo (PO items) │     │  ekpo_enriched   │◀──┐                 │
-│  │  ekpo_enriched   │────▶│  (synced)        │   │                 │
-│  │  dock_slot       │     │                   │   │                 │
-│  │  delivery_booking│     │  dock_slot (OLTP) │   │  ┌────────────┐│
-│  └──────────────────┘     │  delivery_booking │◀──┼──│ Databricks ││
-│                            │  (OLTP)          │   │  │ App        ││
-│                            └──────────────────┘   │  │            ││
-│                                                    │  │ React +   ││
-│  ┌──────────────────┐                             │  │ FastAPI   ││
-│  │ Notebooks         │                             │  │            ││
-│  │ 01_SAP_Pipeline  │ ← Run in order              │  │ /supplier ││
-│  │ 02_Lakebase_Setup│                             └──│ /clerk    ││
-│  │ 03_Exploration   │                                │ /dashboard││
-│  │ 04_Deployment    │                                └────────────┘│
-│  └──────────────────┘                                              │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Databricks Workspace                             │
+│                                                                               │
+│  ┌───────────────────────────────┐        ┌────────────────────────────────┐ │
+│  │        Lakehouse (Delta)       │        │        Lakebase (Postgres)     │ │
+│  │                                │        │                                │ │
+│  │  Bronze  bronze_ekko / ekpo    │        │  OLTP (read/write):            │ │
+│  │          bronze_dock_slot ...  │        │    dock_slot                   │ │
+│  │    │                           │        │    delivery_booking            │ │
+│  │    ▼                           │ synced │                                │ │
+│  │  Silver  silver_ekko/ekpo      │ tables │  Synced (read-only):           │ │
+│  │    │     (+ dq_results)        │───────▶│    ekko                        │ │
+│  │    ▼                           │        │    ekpo_enriched               │ │
+│  │  Gold    ekpo_enriched  ───────┼────────┘                                │ │
+│  │          slot_utilization      │        │  Branches: production / dev    │ │
+│  │          booking_funnel        │◀───────┐  Lakehouse Sync (CDC, optional)│ │
+│  └───────────────┬────────────────┘  reverse└──────────────┬─────────────────┘ │
+│                  │                     sync                 │                   │
+│         ┌────────▼─────────┐                       ┌────────▼─────────┐         │
+│         │  AI/BI Dashboard │                       │  Databricks App  │         │
+│         │  (Lakeview)      │                       │  React + FastAPI │         │
+│         └──────────────────┘                       │  /  /clerk       │         │
+│                                                     │  /dashboard      │         │
+│                                                     └──────────────────┘         │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Data Model
 
-### SAP MM Tables (Delta Lake → Synced to Lakebase)
+### SAP MM Tables (Lakehouse, medallion)
 
-| Table | Description | Key Fields |
-|-------|-------------|------------|
-| `ekko` | PO Headers | EBELN (PO#), LIFNR (vendor), BEDAT (date), BUKRS, EKORG |
-| `ekpo` | PO Items | EBELN, EBELP (item#), MATNR (material), MENGE (qty), NETPR (price) |
-| `ekpo_enriched` | Joined PO data | All EKPO fields + EKKO header fields |
+| Layer | Table | Description |
+|-------|-------|-------------|
+| Bronze | `bronze_ekko`, `bronze_ekpo`, `bronze_dock_slot`, `bronze_delivery_booking` | Raw ingest, as-is + ingestion metadata |
+| Silver | `silver_ekko`, `silver_ekpo`, `dq_results` | Cleaned, deduplicated, data-quality enforced |
+| Gold | `ekpo_enriched` | PO header + item join with computed `LINE_VALUE` |
+| Gold | `slot_utilization` | Dock capacity vs. reservations by dock/date |
+| Gold | `booking_funnel` | Bookings + PO value by status |
 
-### OLTP Tables (Lakebase)
+`ekpo_enriched` (and a gold `ekko_gold` header projection) are **synced into Lakebase**
+as read-only tables. `slot_utilization` and `booking_funnel` stay Lakehouse-only and
+feed the AI/BI dashboard.
+
+### OLTP Tables (Lakebase, read/write)
 
 | Table | Description | Key Fields |
 |-------|-------------|------------|
 | `dock_slot` | Loading dock time slots | slot_id, dock_id, slot_date, time_window, capacity, reserved_count |
 | `delivery_booking` | Supplier delivery bookings | booking_id, slot_id, vendor_id, po_number, status |
 
+### Synced Tables (Lakehouse → Lakebase, read-only)
+
+| Table | Source (Delta gold) |
+|-------|---------------------|
+| `ekko` | `ekko_gold` |
+| `ekpo_enriched` | `ekpo_enriched` |
+
 ### Materials (LiDAR Components)
 
-| Material ID | Description |
-|-------------|-------------|
-| LIDAR-SENSOR-01 | LiDAR Sensor Module |
-| LIDAR-MOUNT-KIT | Mounting Kit |
-| LIDAR-OPTICS-MODULE | Optics Module |
-| LIDAR-PCB-BOARD | PCB Board |
-| LIDAR-HOUSING | Sensor Housing |
+`LIDAR-SENSOR-01`, `LIDAR-MOUNT-KIT`, `LIDAR-OPTICS-MODULE`, `LIDAR-PCB-BOARD`, `LIDAR-HOUSING`
 
 ---
 
 ## Prerequisites
 
-1. **Databricks Workspace** with:
-   - Unity Catalog enabled
-   - Serverless SQL Warehouse
-   - Lakebase enabled
-   - Databricks Apps enabled
+1. **Databricks Workspace** with Unity Catalog, a Serverless SQL Warehouse, **Lakebase
+   (Autoscaling)**, and **Databricks Apps** enabled.
+2. **Databricks CLI** v0.285.0+ authenticated to your workspace.
+3. **psql** client (only if you want to connect to Lakebase manually).
+4. **Node.js 18+** (only if rebuilding the frontend; a pre-built `dist/` is committed).
 
-2. **Databricks CLI** v0.285.0+ installed and authenticated:
-   ```bash
-   databricks --version  # Must be 0.285.0+
-   databricks auth login --host https://your-workspace.cloud.databricks.com --profile your-profile
-   ```
+---
 
-3. **psql client** (for Lakebase setup):
-   ```bash
-   brew install postgresql@16  # macOS
-   ```
+## Configuration — one file
 
-4. **Node.js 18+** (only needed if rebuilding the frontend):
-   ```bash
-   node --version  # v18+
-   ```
+All catalog / schema / project / app names live in **`config.py`**. Every notebook
+loads it via `%run ./config` (or `%run ../config` from `_helper/`). **Retargeting the
+demo to a new workspace is a single edit** — change the values in `config.py`:
+
+```python
+CATALOG = "serverless_stable_7qzrfp_catalog"   # your catalog
+SCHEMA  = "delivery_slot_booking"              # your schema
+PROJECT = "delivery-slot-booking"              # Lakebase project + app name
+DB_NAME = "delivery_app"                       # Postgres database
+```
+
+The catalog is assumed to pre-exist; the notebooks create the schema.
 
 ---
 
 ## Setup Instructions
 
-### Step 1: Clone the Repository
+### Step 1: Clone and import
 
 ```bash
 git clone https://github.com/maxkoehlerdatabricks/supplier-delivery-slot-booking.git
-cd supplier-delivery-slot-booking
 ```
+Import the repo into your workspace (e.g. `/Workspace/Users/<you>/supplier-delivery-slot-booking`)
+so `config.py`, the notebooks, and the `app/` folder sit side by side.
 
-### Step 2: Configure Your Environment
+### Step 2: Run notebooks in order
 
-Update the following constants in each notebook to match your workspace:
+The fastest path is **`_helper/run_all`**, which cleans up and rebuilds everything.
+To run manually, execute in this order:
 
-```python
-CATALOG = "your_catalog"
-SCHEMA = "your_schema"
-PROFILE = "your-databricks-profile"
-```
+1. **`_helper/01_generate_sap_data`** — generate SAP EKKO/EKPO (Delta)
+2. **`_helper/02_generate_oltp_data`** — generate dock_slot & delivery_booking (Delta)
+3. **`01_SAP_Data_Pipeline`** — medallion bronze → silver → gold + data quality + UC governance
+4. **`02_Lakebase_Setup`** — Lakebase project, OLTP tables, UC database catalog, **synced tables**, dev branch
+5. **`02b_Lakehouse_Sync`** *(optional)* — reverse sync Lakebase → Delta (CDC)
+6. **`03_Data_Exploration`** *(optional)* — visual analysis + lineage/tags queries
+7. **`03b_AIBI_Dashboard`** — publish the AI/BI dashboard over the gold tables
+8. **`04_App_Deployment`** — deploy the Databricks App
 
-### Step 3: Run Notebooks in Order
+### Step 3: Open the app
 
-Import the notebooks into your Databricks workspace and run them sequentially:
-
-1. **`_helper/01_generate_sap_data.py`** — Generates simulated SAP EKKO/EKPO data
-   - Creates ~50 PO headers and ~150 PO items
-   - Writes Delta tables: `ekko`, `ekpo`
-
-2. **`_helper/02_generate_oltp_data.py`** — Generates simulated OLTP data
-   - Creates ~60 dock slots and ~40 delivery bookings
-   - Writes Delta tables: `dock_slot`, `delivery_booking`
-
-3. **`01_SAP_Data_Pipeline.py`** — Processes SAP data
-   - Joins EKKO + EKPO with data quality checks
-   - Creates enriched Delta table: `ekpo_enriched`
-
-4. **`02_Lakebase_Setup.py`** — Sets up Lakebase
-   - Creates Lakebase project with branching
-   - Creates OLTP tables (dock_slot, delivery_booking)
-   - Loads data from Delta tables
-   - Sets up synced tables for PO data
-
-5. **`03_Data_Exploration.py`** — Explore the data
-   - Visualizations of POs, slots, bookings
-   - Cross-table joins and analytics
-
-6. **`04_App_Deployment.py`** — Deploys the web application
-   - Creates and deploys the Databricks App
-   - Provides the app URL
-
-### Step 4: Open the App
-
-After deployment, open the app URL provided in the last notebook. You'll see three views:
-
-- **Supplier Portal** (`/`) — Book delivery slots
-- **Warehouse Clerk** (`/clerk`) — Look up POs and manage bookings
-- **Dashboard** (`/dashboard`) — Overview of all activity
+After deployment, open the app URL printed by `04_App_Deployment`.
 
 ---
 
 ## Demo Scenarios
 
-### Scenario 1: Supplier Books a Delivery Slot
+### Scenario 1: Supplier books a delivery slot
+Supplier Portal → pick a vendor and PO (from the **synced** `ekko` table) → pick a date
+and dock slot (from the `dock_slot` OLTP table) → submit. Booking is inserted into
+`delivery_booking` in Lakebase at Postgres latency.
 
-1. Open the app → **Supplier Portal**
-2. Select an available date from the calendar
-3. View the slot grid — see available time windows per dock
-4. Click an available slot (e.g., DOCK-A, 08:00-12:00)
-5. Fill in the booking form:
-   - PO Number: `4500000001`
-   - Vendor ID: `VENDOR_001`
-   - Truck Plate: `M-AB-1234`
-   - Driver: `Hans Mueller`
-6. Submit → Booking created with status **"requested"**
+### Scenario 2: Warehouse clerk manages a delivery
+Warehouse Clerk → select a PO → see header + line items (synced SAP data) and linked
+bookings → move a booking through `requested → confirmed → checked_in → completed`.
 
-### Scenario 2: Warehouse Clerk Pre-Checks Delivery
+### Scenario 3: Operational + analytical views
+- App **Dashboard** — live operational view from Lakebase OLTP tables.
+- **AI/BI dashboard** (`03b_AIBI_Dashboard`) — governed analytics over the Lakehouse gold tables.
 
-1. Open the app → **Warehouse Clerk**
-2. Search for PO `4500000001`
-3. View PO details:
-   - Header: Vendor VENDOR_001, PO type NB
-   - Items: LIDAR-SENSOR-01 (10 EA), LIDAR-MOUNT-KIT (20 EA)
-4. See linked bookings for this PO
-5. Click **"Confirm"** → Status changes to **"confirmed"**
-6. When truck arrives, click **"Check In"** → Status: **"checked_in"**
-7. After goods received, click **"Complete"** → Status: **"completed"**
-
-### Scenario 3: Dashboard Overview
-
-1. Open the app → **Dashboard**
-2. View summary stats: total bookings by status
-3. See today's slot utilization per dock
-4. Monitor recent activity feed
+A full presenter walkthrough is in **`demo-script.html`**.
 
 ---
 
@@ -191,13 +163,16 @@ After deployment, open the app URL provided in the last notebook. You'll see thr
 
 | Component | Technology |
 |-----------|------------|
-| Data Lake | Databricks Delta Lake |
-| OLTP Database | Databricks Lakebase (PostgreSQL) |
+| Data Lake | Databricks Delta Lake (medallion) |
+| Governance | Unity Catalog (comments, tags, grants, lineage) |
+| BI | Databricks AI/BI (Lakeview) dashboard |
+| OLTP Database | Databricks Lakebase (PostgreSQL, Autoscaling) |
+| Reverse ETL | Lakebase synced tables (Delta → PG) + Lakehouse Sync (PG → Delta) |
 | Data Pipeline | PySpark (Databricks Notebooks) |
-| Backend API | FastAPI (Python) |
-| Frontend | React + TypeScript + TailwindCSS |
+| Backend API | FastAPI (Python) + asyncpg |
+| Frontend | React + TypeScript + TailwindCSS (Vite) |
 | Deployment | Databricks Apps |
-| Auth | Databricks OAuth (dual-mode) |
+| Auth | Databricks OAuth / service principal |
 
 ---
 
@@ -206,48 +181,29 @@ After deployment, open the app URL provided in the last notebook. You'll see thr
 ```
 supplier-delivery-slot-booking/
 ├── README.md
+├── config.py                          # Shared config — one-file retargeting
 ├── _helper/
-│   ├── 01_generate_sap_data.py        # Generate SAP EKKO & EKPO data
-│   └── 02_generate_oltp_data.py        # Generate dock slots & bookings
-├── 01_SAP_Data_Pipeline.py             # Join & enrich SAP data
-├── 02_Lakebase_Setup.py                # Create Lakebase project & tables
-├── 03_Data_Exploration.py              # Data visualizations
-├── 04_App_Deployment.py                # Deploy Databricks App
-├── 05_Cleanup.py                       # Delete all demo resources
-└── app/                                # Web application
-    ├── app.yaml                        # Databricks App config
-    ├── app.py                          # FastAPI entry point
-    ├── requirements.txt
-    ├── server/
-    │   ├── config.py                   # Auth configuration
-    │   ├── db.py                       # Lakebase connection pool
-    │   └── routes/
-    │       ├── slots.py                # Slot endpoints
-    │       ├── bookings.py             # Booking endpoints
-    │       └── pos.py                  # PO lookup endpoints
-    └── frontend/
-        ├── package.json
-        ├── vite.config.ts
-        ├── tailwind.config.js
-        ├── src/
-        │   ├── App.tsx                 # Router + navigation
-        │   ├── pages/
-        │   │   ├── SupplierPortal.tsx  # Slot booking flow
-        │   │   ├── WarehouseClerk.tsx  # PO lookup + receipt
-        │   │   └── Dashboard.tsx       # Status overview
-        │   └── components/
-        │       ├── SlotCalendar.tsx
-        │       ├── BookingForm.tsx
-        │       ├── PODetail.tsx
-        │       └── StatusBadge.tsx
-        └── dist/                       # Built frontend (committed)
+│   ├── 01_generate_sap_data.py        # Generate SAP EKKO & EKPO
+│   ├── 02_generate_oltp_data.py       # Generate dock slots & bookings
+│   ├── run_all.ipynb                  # Cleanup + full rebuild
+│   └── cleanup_all.ipynb              # Delete all demo resources
+├── 01_SAP_Data_Pipeline.py            # Medallion bronze→silver→gold + governance
+├── 02_Lakebase_Setup.py               # Lakebase project, OLTP + synced tables
+├── 02b_Lakehouse_Sync.py              # Reverse sync Lakebase→Delta (optional)
+├── 03_Data_Exploration.py             # Visual analysis + lineage/tags
+├── 03b_AIBI_Dashboard.py              # Publish AI/BI dashboard
+├── 04_App_Deployment.py               # Deploy Databricks App
+├── demo-script.html                   # Presenter walkthrough
+└── app/                               # React + FastAPI application
+    ├── app.yaml / app.yml             # App runtime config
+    ├── app.py                         # FastAPI entry point
+    ├── server/                        # config, db pool, routes
+    └── frontend/                      # React SPA (pre-built dist/ committed)
 ```
 
 ---
 
 ## Local Development
-
-To run the app locally:
 
 ```bash
 # Backend
@@ -255,30 +211,26 @@ cd app
 pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 
-# Frontend (in separate terminal)
+# Frontend (separate terminal)
 cd app/frontend
 npm install
 npm run dev
 ```
 
-The frontend dev server proxies API calls to `localhost:8000`.
-
 ---
 
 ## Cleanup
 
-To delete **all demo resources** (app, Lakebase project, warehouse, secret scope, Delta tables, schema) while keeping the catalog intact, run:
+Run **`_helper/cleanup_all`** to delete **all** demo resources while keeping the catalog:
 
-**`05_Cleanup.py`** — Import into your workspace and run all cells sequentially.
+- AI/BI dashboard
+- Databricks App (+ service principal)
+- Lakehouse Sync (reverse), if enabled
+- Synced tables + UC database catalog
+- Lakebase project (branches, endpoints, data)
+- All Delta tables (bronze/silver/gold + raw) and both schemas
 
-This deletes:
-- Databricks App (`delivery-slot-booking`)
-- Lakebase project and all data (`delivery-slot-booking`)
-- Secret scope (`delivery-slot-booking`)
-- SQL Warehouse (`delivery-slot-booking-warehouse`)
-- All Delta tables and the schema
-
-To re-deploy after cleanup, re-run the notebooks starting from `_helper/01_generate_sap_data.py`.
+Re-run `_helper/run_all` to rebuild from scratch.
 
 ---
 
@@ -292,8 +244,8 @@ requested → confirmed → checked_in → completed
 
 | Status | Description |
 |--------|-------------|
-| `requested` | Supplier has booked a slot, pending confirmation |
-| `confirmed` | Warehouse team has confirmed the booking |
-| `checked_in` | Truck has arrived and been checked in |
+| `requested` | Supplier booked a slot, pending confirmation |
+| `confirmed` | Warehouse team confirmed the booking |
+| `checked_in` | Truck arrived and checked in |
 | `completed` | Goods received and booking completed |
-| `cancelled` | Booking was cancelled |
+| `cancelled` | Booking cancelled |

@@ -12,8 +12,3 @@ env:
     value: "primary"
   - name: PGDATABASE
     value: "delivery_app"
-resources:
-  - name: sql-warehouse
-    sql_warehouse:
-      id: "29e7967254530371"
-      permission: CAN_USE

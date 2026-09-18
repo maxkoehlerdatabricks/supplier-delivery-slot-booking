@@ -17,11 +17,11 @@
 
 # COMMAND ----------
 
-from pyspark.sql import functions as F
+# MAGIC %run ./config
 
-CATALOG = "classic_stable_4rp118_catalog"
-SCHEMA = "delivery_slot_booking_ppmaxkohler"
-FULL_SCHEMA = f"{CATALOG}.{SCHEMA}"
+# COMMAND ----------
+
+from pyspark.sql import functions as F
 
 print(f"Reading from: {FULL_SCHEMA}")
 
@@ -323,7 +323,58 @@ display(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Application Flow Diagram
+# MAGIC ## 5. Unity Catalog Governance & Lineage
+# MAGIC
+# MAGIC The gold tables are governed: they carry comments and tags, and Unity Catalog
+# MAGIC tracks their lineage automatically (bronze → silver → gold → Lakebase synced).
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Tags on the gold layer
+# MAGIC
+# MAGIC Certification and domain tags applied in `01_SAP_Data_Pipeline`.
+
+# COMMAND ----------
+
+display(
+    spark.sql(f"""
+        SELECT table_name, tag_name, tag_value
+        FROM {CATALOG}.information_schema.table_tags
+        WHERE schema_name = '{SCHEMA}'
+        ORDER BY table_name, tag_name
+    """)
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Upstream lineage of `ekpo_enriched`
+# MAGIC
+# MAGIC Which tables feed the gold `ekpo_enriched` table? (Sourced from the UC
+# MAGIC `system.access.table_lineage` system table — populated shortly after the
+# MAGIC pipeline runs.)
+
+# COMMAND ----------
+
+try:
+    display(
+        spark.sql(f"""
+            SELECT DISTINCT source_table_full_name, target_table_full_name
+            FROM system.access.table_lineage
+            WHERE target_table_schema = '{SCHEMA}'
+              AND source_table_full_name IS NOT NULL
+            ORDER BY target_table_full_name, source_table_full_name
+        """)
+    )
+except Exception as e:
+    print(f"Lineage system table not queryable in this workspace yet: {e}")
+    print("Open Catalog Explorer → the gold table → Lineage tab for the visual graph.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 6. Application Flow Diagram
 # MAGIC
 # MAGIC The delivery slot booking process follows this workflow:
 # MAGIC

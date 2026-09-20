@@ -86,12 +86,12 @@ datasets = [
     },
     {
         "name": "slot_utilization",
-        "displayName": "Dock utilization by date",
+        "displayName": "Avg dock utilization %",
         "queryLines": [
-            f"SELECT slot_date, dock_id, ",
-            f"       total_capacity, total_reserved, utilization_pct ",
+            f"SELECT dock_id, ROUND(AVG(utilization_pct), 1) AS avg_utilization_pct ",
             f"FROM {FULL_SCHEMA}.slot_utilization ",
-            f"ORDER BY slot_date, dock_id",
+            f"GROUP BY dock_id ",
+            f"ORDER BY dock_id",
         ],
     },
     {
@@ -108,11 +108,15 @@ datasets = [
 ]
 
 def bar_widget(name, dataset, x_field, y_field, title, x_scale="categorical"):
+    # The widget's query MUST be named exactly "main_query" (the dataset link is
+    # via `datasetName` inside the query, NOT the query name). Encodings then
+    # reference that single query implicitly. A dataset-suffixed query name gives
+    # "This widget reads from main_query, but its available queries are: ...".
     return {
         "widget": {
             "name": name,
             "queries": [{
-                "name": f"main_query/{dataset}",
+                "name": "main_query",
                 "query": {
                     "datasetName": dataset,
                     "fields": [
@@ -134,27 +138,6 @@ def bar_widget(name, dataset, x_field, y_field, title, x_scale="categorical"):
         }
     }
 
-def table_widget(name, dataset, fields, title):
-    return {
-        "widget": {
-            "name": name,
-            "queries": [{
-                "name": f"main_query/{dataset}",
-                "query": {
-                    "datasetName": dataset,
-                    "fields": [{"name": f, "expression": f"`{f}`"} for f in fields],
-                    "disaggregated": True,
-                },
-            }],
-            "spec": {
-                "version": 1,
-                "widgetType": "table",
-                "encodings": {"columns": [{"fieldName": f, "displayName": f} for f in fields]},
-                "frame": {"title": title, "showTitle": True},
-            },
-        }
-    }
-
 layout = [
     {"widget": bar_widget("w_vendor", "po_value_by_vendor", "vendor", "total_value",
                           "PO value by vendor (EUR)")["widget"],
@@ -165,9 +148,8 @@ layout = [
     {"widget": bar_widget("w_funnel", "booking_funnel", "status", "bookings",
                           "Booking funnel")["widget"],
      "position": {"x": 0, "y": 6, "width": 3, "height": 6}},
-    {"widget": table_widget("w_slots", "slot_utilization",
-                            ["slot_date", "dock_id", "total_capacity", "total_reserved", "utilization_pct"],
-                            "Dock utilization by date")["widget"],
+    {"widget": bar_widget("w_slots", "slot_utilization", "dock_id", "avg_utilization_pct",
+                          "Avg dock utilization % by dock")["widget"],
      "position": {"x": 3, "y": 6, "width": 3, "height": 6}},
 ]
 

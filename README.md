@@ -1,7 +1,8 @@
 # Supplier Delivery Slot Booking
 
 A demo application for a **LiDAR sensor manufacturing plant** that showcases the
-**Databricks Lakehouse + Lakebase + Apps** stack end to end:
+**Databricks Lakehouse + Lakebase + Apps** stack end to end — from raw SAP data to a
+production web app, on one platform.
 
 - **Lakehouse** — SAP MM purchasing data landed and refined through a **medallion
   pipeline** (bronze → silver → gold), governed in **Unity Catalog**, and surfaced in an
@@ -10,14 +11,94 @@ A demo application for a **LiDAR sensor manufacturing plant** that showcases the
   Git-style **branching** and **real synced tables** replicating the Lakehouse gold data.
 - **Databricks Apps** — a **React + FastAPI** web app deployed as a managed Databricks App.
 
-The app provides:
-- **Supplier Portal** — book delivery time slots at the plant's loading docks
-- **Warehouse Clerk View** — look up PO details and manage goods receipt
-- **Dashboard** — real-time overview of bookings and slot utilization
+---
+
+## The Business Problem
+
+A LiDAR sensor plant receives **hundreds of inbound deliveries per week** from its
+suppliers. Today, suppliers arrange delivery slots at the loading docks by **email and
+phone**. The result:
+
+- **Double-booked docks** — two trucks arrive for the same bay at the same time.
+- **No visibility** — the warehouse team can't see what's coming or plan labor and space.
+- **Manual PO lookup** — clerks dig through SAP to match a truck to its purchase order.
+- **No analytics** — nobody can see dock utilization, spend by supplier, or bottlenecks.
+
+The data needed to fix this already exists — SAP purchase orders in the Lakehouse — but
+it's **analytical** data, not built for the sub-second reads and writes a live booking
+app needs. This demo bridges that gap.
+
+### Who feels it
+
+| Persona | Pain today | With the app |
+|---------|-----------|--------------|
+| **Supplier** | Emails to request a slot, waits for confirmation | Self-service portal: pick vendor → PO → dock → time, instant booking |
+| **Warehouse clerk** | Manually matches trucks to POs in SAP | One screen: PO header + line items + linked bookings, one-click status flow |
+| **Plant / logistics manager** | No view of utilization or supplier spend | Live AI/BI dashboard: dock utilization, PO value by vendor, booking funnel |
+
+### The solution in one line
+
+Govern the SAP data in the **Lakehouse**, **sync** the gold tables into **Lakebase**
+(OLTP Postgres) for low-latency serving, and put a **Databricks App** in front of it — so
+the same certified data powers both the operational app and the analytics dashboard.
+
+---
+
+## Screenshots
+
+> Live app: the three views suppliers and warehouse staff use.
+
+| Supplier Portal | Warehouse Clerk | App Dashboard |
+|---|---|---|
+| ![Supplier Portal](docs/app-supplier-portal.png) | ![Warehouse Clerk](docs/app-warehouse-clerk.png) | ![App Dashboard](docs/app-dashboard.png) |
+
+> AI/BI dashboard over the Lakehouse gold tables.
+
+![AI/BI Dashboard](docs/aibi-dashboard.png)
 
 ---
 
 ## Architecture
+
+```mermaid
+flowchart LR
+    subgraph LH["Lakehouse (Delta + Unity Catalog)"]
+        direction TB
+        B["Bronze<br/>raw SAP + OLTP"] --> S["Silver<br/>cleaned + DQ checks"]
+        S --> G["Gold<br/>ekpo_enriched · slot_utilization · booking_funnel"]
+    end
+    subgraph LB["Lakebase (Postgres, OLTP)"]
+        direction TB
+        OLTP["dock_slot · delivery_booking<br/>(read/write)"]
+        SYN["ekko · ekpo_enriched<br/>(synced, read-only)"]
+    end
+    G -- "synced tables<br/>(Delta → Postgres)" --> SYN
+    G --> DASH["AI/BI Dashboard<br/>(Lakeview)"]
+    OLTP --> APP["Databricks App<br/>React + FastAPI"]
+    SYN --> APP
+    APP --> U["Users<br/>Supplier · Clerk · Manager"]
+```
+
+### Medallion data flow
+
+```mermaid
+flowchart LR
+    RAW["SAP extract<br/>ekko · ekpo<br/>dock_slot · delivery_booking"]:::raw
+    RAW --> BR["bronze_*<br/>as-is + ingest metadata"]:::bronze
+    BR --> SI["silver_ekko · silver_ekpo<br/>deduped, DQ enforced<br/>(dq_results audit)"]:::silver
+    SI --> GO["ekpo_enriched · ekko_gold<br/>slot_utilization · booking_funnel"]:::gold
+    GO --> SYNC["Lakebase synced tables"]:::sync
+    GO --> BI["AI/BI dashboard"]:::bi
+    classDef raw fill:#EEEDE9,stroke:#618794;
+    classDef bronze fill:#F6B26B,stroke:#8a5a2b;
+    classDef silver fill:#D9D9D9,stroke:#666;
+    classDef gold fill:#FFD966,stroke:#8a7400;
+    classDef sync fill:#00A972,stroke:#036,color:#fff;
+    classDef bi fill:#1B5162,stroke:#012,color:#fff;
+```
+
+<details>
+<summary>ASCII architecture (same picture, plain text)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -46,6 +127,13 @@ The app provides:
 │                                                     └──────────────────┘         │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
+
+The app provides three views:
+- **Supplier Portal** (`/`) — book delivery time slots at the plant's loading docks
+- **Warehouse Clerk** (`/clerk`) — look up PO details and manage goods receipt
+- **Dashboard** (`/dashboard`) — real-time overview of bookings and slot utilization
 
 ## Data Model
 

@@ -418,7 +418,13 @@
   <div class="sidebar-title">Demo Script</div>
   <a href="#part0" class="part-link">Part 0 — Setup</a>
   <a href="#part1" class="part-link">Part 1 — Business Problem</a>
-  <a href="#part2" class="part-link">Part 2 — Lakebase</a>
+  <a href="#partL" class="part-link">Part 2 — Lakehouse</a>
+  <a href="#sL-1">2L.1 Medallion Pipeline</a>
+  <a href="#sL-2">2L.2 Data Quality</a>
+  <a href="#sL-3">2L.3 UC Governance</a>
+  <a href="#sL-4">2L.4 Lineage</a>
+  <a href="#sL-5">2L.5 AI/BI Dashboard</a>
+  <a href="#part2" class="part-link">Part 3 — Lakebase</a>
   <a href="#s2-1">2.1 Project Overview</a>
   <a href="#s2-2">2.2 Project Settings</a>
   <a href="#s2-3">2.3 Branches</a>
@@ -432,7 +438,7 @@
   <a href="#s2-11">2.11 Data API</a>
   <a href="#s2-12">2.12 Security</a>
   <a href="#s2-13">2.13 Instant Restore</a>
-  <a href="#part3" class="part-link">Part 3 — Databricks Apps</a>
+  <a href="#part3" class="part-link">Part 4 — Databricks Apps</a>
   <a href="#s3-1">3.1 Apps Overview</a>
   <a href="#s3-2">3.2 Overview Tab</a>
   <a href="#s3-3">3.3 Resources</a>
@@ -448,12 +454,12 @@
   <a href="#s3-13">3.13 Tags</a>
   <a href="#s3-14">3.14 Networking</a>
   <a href="#s3-15">3.15 More Capabilities</a>
-  <a href="#part4" class="part-link">Part 4 — Live App</a>
+  <a href="#part4" class="part-link">Part 5 — Live App</a>
   <a href="#s4-1">4.1 Open the App</a>
   <a href="#s4-2">4.2 Supplier Portal</a>
   <a href="#s4-3">4.3 Warehouse Clerk</a>
   <a href="#s4-4">4.4 Dashboard</a>
-  <a href="#part5" class="part-link">Part 5 — Architecture</a>
+  <a href="#part5" class="part-link">Part 6 — Architecture</a>
   <a href="#checklist" class="part-link">Feature Checklist</a>
 </nav>
 
@@ -465,20 +471,24 @@
 
 <div class="meta-bar">
   <div class="meta-item"><strong>Scenario:</strong>&nbsp;LiDAR sensor plant — supplier delivery coordination</div>
-  <div class="meta-item"><strong>Duration:</strong>&nbsp;45–60 min</div>
-  <div class="meta-item"><strong>Products:</strong>&nbsp;Lakebase + Apps</div>
+  <div class="meta-item"><strong>Duration:</strong>&nbsp;55–70 min</div>
+  <div class="meta-item"><strong>Products:</strong>&nbsp;Lakehouse + Lakebase + Apps</div>
 </div>
 
 <!-- ==================== PART 0 ==================== -->
 <h2 id="part0"><span class="part-num">Part 0</span> Setup <span class="part-time">Run Before Demo</span></h2>
 
-<p>Run these notebooks in order so the environment is fully provisioned:</p>
+<p>Run these notebooks in order so the environment is fully provisioned (or just run
+<code>_helper/run_all</code>, which cleans up and rebuilds everything). All names come
+from the shared <code>config.py</code>.</p>
 <ol>
-  <li><code>_helper/01_generate_sap_data.py</code></li>
-  <li><code>_helper/02_generate_oltp_data.py</code></li>
-  <li><code>01_SAP_Data_Pipeline.py</code></li>
-  <li><code>02_Lakebase_Setup.py</code></li>
-  <li><code>04_App_Deployment.py</code></li>
+  <li><code>_helper/01_generate_sap_data.py</code> — raw SAP EKKO/EKPO into Delta</li>
+  <li><code>_helper/02_generate_oltp_data.py</code> — raw dock slots &amp; bookings into Delta</li>
+  <li><code>01_SAP_Data_Pipeline.py</code> — medallion bronze→silver→gold + UC governance</li>
+  <li><code>02_Lakebase_Setup.py</code> — Lakebase project, OLTP tables, <strong>synced tables</strong></li>
+  <li><code>02b_Lakehouse_Sync.py</code> — reverse sync Lakebase→Delta <em>(optional)</em></li>
+  <li><code>03b_AIBI_Dashboard.py</code> — publish the AI/BI dashboard</li>
+  <li><code>04_App_Deployment.py</code> — deploy the Databricks App</li>
 </ol>
 <p>Verify the app is in <strong>RUNNING</strong> state before you begin.</p>
 
@@ -486,11 +496,76 @@
 <h2 id="part1"><span class="part-num">Part 1</span> The Business Problem <span class="part-time">2 min</span></h2>
 
 <div class="talk-track">
-"Our LiDAR plant receives hundreds of deliveries per week. Suppliers need to book dock slots in advance so the warehouse team can plan. Today this is done by email and phone — chaotic, double-bookings, no visibility. We're going to build a modern solution using two new Databricks products: <strong>Lakebase</strong> for the transactional backend, and <strong>Databricks Apps</strong> for the hosted web application."
+"Our LiDAR plant receives hundreds of deliveries per week. Suppliers need to book dock slots in advance so the warehouse team can plan. Today this is done by email and phone — chaotic, double-bookings, no visibility. We're going to build a modern solution on Databricks end to end: the <strong>Lakehouse</strong> holds and governs our SAP purchasing data through a medallion pipeline and serves an AI/BI dashboard; <strong>Lakebase</strong> is the transactional backend for bookings, with synced tables bridging it to the Lakehouse; and <strong>Databricks Apps</strong> hosts the web application. One platform, from data lake to production app."
 </div>
 
-<!-- ==================== PART 2 ==================== -->
-<h2 id="part2"><span class="part-num">Part 2</span> Lakebase Deep Dive <span class="part-time">25 min</span></h2>
+<!-- ==================== PART 2 — LAKEHOUSE ==================== -->
+<h2 id="partL"><span class="part-num">Part 2</span> Lakehouse Deep Dive <span class="part-time">15 min</span></h2>
+
+<div class="talk-track">
+"Before we get to the transactional side, let's look at where the trusted data comes from. Our SAP purchase-order data lands in the <strong>Lakehouse</strong> and is refined through a <strong>medallion architecture</strong> — bronze, silver, gold — governed end to end by <strong>Unity Catalog</strong>. This is the analytical backbone: the same gold tables feed our AI/BI dashboard <em>and</em> get synced into Lakebase to power the app."
+</div>
+
+<!-- 2L.1 -->
+<h3 id="sL-1">2L.1 — Medallion Pipeline (Bronze → Silver → Gold)</h3>
+<ol>
+  <li>Open <strong>Catalog Explorer</strong> → your catalog → the <code>delivery_slot_booking</code> schema.</li>
+  <li>Point out the three layers created by <code>01_SAP_Data_Pipeline</code>:
+    <ul>
+      <li><strong>Bronze</strong> — <code>bronze_ekko</code>, <code>bronze_ekpo</code>, <code>bronze_dock_slot</code>, <code>bronze_delivery_booking</code>: raw ingest, as-is, with <code>_ingested_at</code> / <code>_source</code> metadata.</li>
+      <li><strong>Silver</strong> — <code>silver_ekko</code>, <code>silver_ekpo</code>: cleaned, deduplicated, data-quality enforced.</li>
+      <li><strong>Gold</strong> — <code>ekpo_enriched</code> (PO header + item join with computed line value), <code>slot_utilization</code>, <code>booking_funnel</code>.</li>
+    </ul>
+  </li>
+</ol>
+<div class="talk-track">
+"Bronze is the immutable landing zone — exactly what arrived from SAP. Silver is where we enforce quality and dedupe. Gold is business-ready: joined, aggregated, and certified for consumption by BI, Genie, ML, and applications. Each layer is a Delta table, so we get ACID transactions, time travel, and schema evolution for free."
+</div>
+
+<!-- 2L.2 -->
+<h3 id="sL-2">2L.2 — Data Quality</h3>
+<ol>
+  <li>Open the <code>dq_results</code> table (or re-run the DQ cell in <code>01_SAP_Data_Pipeline</code>).</li>
+  <li>Walk through the checks: null PO numbers, zero/negative quantities, SAP deletion flags (<code>LOEKZ = 'X'</code>).</li>
+</ol>
+<div class="talk-track">
+"Every silver build records its data-quality results to an auditable table. Here we validate that PO numbers are present, quantities are positive, and SAP-deleted line items are filtered out before they ever reach gold. In production this is where you'd wire Lakeflow expectations to quarantine or fail on bad data."
+</div>
+
+<!-- 2L.3 -->
+<h3 id="sL-3">2L.3 — Unity Catalog Governance</h3>
+<ol>
+  <li>Click the gold <code>ekpo_enriched</code> table → <strong>Overview</strong>. Show the <strong>table comment</strong> and <strong>column comments</strong>.</li>
+  <li>Show the governed <strong>certification tag</strong> <code>system.certification_status = certified</code> (this workspace enforces tag policies, so gold tables are certified with the governed tag; the layer and domain are captured in the table comments).</li>
+  <li>Click <strong>Permissions</strong> → show the <code>SELECT</code> grant to <code>account users</code>.</li>
+</ol>
+<div class="talk-track">
+"Governance isn't an afterthought — the pipeline applies comments, certification tags, and grants as it builds gold. That's what makes tables discoverable in search, trustworthy for consumers, and safe to open up. Tags like <code>certified=true</code> drive enterprise data catalogs and let Genie prioritize the right tables."
+</div>
+
+<!-- 2L.4 -->
+<h3 id="sL-4">2L.4 — Lineage</h3>
+<ol>
+  <li>On any gold table, click the <strong>Lineage</strong> tab.</li>
+  <li>Show the upstream graph: <code>bronze_*</code> → <code>silver_*</code> → gold, and (after <code>02_Lakebase_Setup</code>) the downstream <strong>synced table</strong> into Lakebase.</li>
+</ol>
+<div class="talk-track">
+"Unity Catalog captures lineage automatically — no manual documentation. I can trace any gold column back to the raw SAP extract it came from, and forward to every dashboard, synced table, and app that consumes it. This is how you answer 'what breaks if I change this?' and 'where did this number come from?' in seconds."
+</div>
+
+<!-- 2L.5 -->
+<h3 id="sL-5">2L.5 — AI/BI Dashboard</h3>
+<ol>
+  <li>Open the <strong>Supplier Delivery &amp; Purchasing — Overview</strong> dashboard (published by <code>03b_AIBI_Dashboard</code>).</li>
+  <li>Walk the widgets: <strong>PO value by vendor</strong>, <strong>spend by material</strong>, <strong>booking funnel</strong>, and <strong>dock utilization by date</strong> — all reading the gold Delta tables via a serverless SQL warehouse.</li>
+  <li>In the dashboard editor, point out the <strong>AI-assisted</strong> authoring (natural-language chart creation) and that each widget is backed by a governed gold table.</li>
+</ol>
+<div class="talk-track">
+"This is BI directly on the Lakehouse — no extract, no separate BI database. The dashboard queries the same certified gold tables we just governed, through a serverless SQL warehouse that scales to zero when idle. And because it's AI/BI, a business user can ask for a chart in natural language and get it. Analytics and the operational app share one source of truth."
+</div>
+
+<!-- ==================== PART 3 — LAKEBASE ==================== -->
+<h2 id="part2"><span class="part-num">Part 3</span> Lakebase Deep Dive <span class="part-time">25 min</span></h2>
 
 <!-- 2.1 -->
 <h3 id="s2-1">2.1 — Project Overview</h3>
@@ -693,11 +768,11 @@ ORDER BY name;</code></pre>
 <h3 id="s2-7">2.7 — Synced Tables (Lakehouse → Lakebase)</h3>
 <ol>
   <li>Navigate to <strong>Unity Catalog</strong> (switch back to main Databricks workspace).</li>
-  <li>Find the <code>ekko</code> table in the catalog browser.</li>
-  <li>Click on it → show the <strong>Overview</strong> tab with sync information.</li>
+  <li>Open the <code>delivery_slot_booking_sync</code> schema and click the <code>ekko</code> or <code>ekpo_enriched</code> <strong>synced table</strong> → show the <strong>Overview</strong> tab with sync information.</li>
+  <li>These are read-only UC tables managed by the sync pipeline; the same tables appear in Lakebase Postgres under the <code>delivery_slot_booking_sync</code> schema.</li>
 </ol>
 <div class="talk-track">
-"Synced Tables are how we bridge the Lakehouse and Lakebase. Our SAP purchase order data lives in Delta Lake. We've created a one-way sync that replicates it into Lakebase as read-only PostgreSQL tables."
+"Synced Tables are how we bridge the Lakehouse and Lakebase. Our SAP purchase-order gold tables live in Delta Lake. We've created a real one-way sync — not a manual copy — that replicates them into Lakebase as read-only PostgreSQL tables the app can join at Postgres latency. Under the hood it's a Lakeflow pipeline keeping Lakebase in step with the Lakehouse."
 </div>
 <ol start="4">
   <li>Point out:
@@ -828,7 +903,7 @@ ORDER BY name;</code></pre>
 <hr>
 
 <!-- ==================== PART 3 ==================== -->
-<h2 id="part3"><span class="part-num">Part 3</span> Databricks Apps Deep Dive <span class="part-time">20 min</span></h2>
+<h2 id="part3"><span class="part-num">Part 4</span> Databricks Apps Deep Dive <span class="part-time">20 min</span></h2>
 
 <!-- 3.1 -->
 <h3 id="s3-1">3.1 — Apps Overview</h3>
@@ -1018,7 +1093,7 @@ Our app uses the service principal model for Lakebase access — the app authent
 <hr>
 
 <!-- ==================== PART 4 ==================== -->
-<h2 id="part4"><span class="part-num">Part 4</span> The Application in Action <span class="part-time">10 min</span></h2>
+<h2 id="part4"><span class="part-num">Part 5</span> The Application in Action <span class="part-time">10 min</span></h2>
 
 <!-- 4.1 -->
 <h3 id="s4-1">4.1 — Open the App</h3>
@@ -1075,7 +1150,7 @@ Our app uses the service principal model for Lakebase access — the app authent
 <hr>
 
 <!-- ==================== PART 5 ==================== -->
-<h2 id="part5"><span class="part-num">Part 5</span> Architecture Recap <span class="part-time">3 min</span></h2>
+<h2 id="part5"><span class="part-num">Part 6</span> Architecture Recap <span class="part-time">3 min</span></h2>
 
 <div class="architecture">
 <pre>
@@ -1119,6 +1194,19 @@ Our app uses the service principal model for Lakebase access — the app authent
 
 <div class="checklist-grid">
   <div class="checklist-card">
+    <h4 style="color: var(--green, #00A972);">Lakehouse Features</h4>
+    <div class="check-item"><span class="check">&#10003;</span> Medallion architecture (bronze/silver/gold) <span class="section-ref">2L.1</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Delta Lake (ACID, time travel) <span class="section-ref">2L.1</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Data quality checks + audit table <span class="section-ref">2L.2</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> UC table &amp; column comments <span class="section-ref">2L.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Governed UC certification tag <span class="section-ref">2L.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> UC grants (SELECT to account users) <span class="section-ref">2L.3</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Automatic lineage (bronze→gold→app) <span class="section-ref">2L.4</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> AI/BI (Lakeview) dashboard <span class="section-ref">2L.5</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Serverless SQL warehouse <span class="section-ref">2L.5</span></div>
+  </div>
+
+  <div class="checklist-card">
     <h4 style="color: var(--blue);">Lakebase Features</h4>
     <div class="check-item"><span class="check">&#10003;</span> Project creation &amp; settings <span class="section-ref">2.1, 2.2</span></div>
     <div class="check-item"><span class="check">&#10003;</span> PostgreSQL version selection <span class="section-ref">2.2</span></div>
@@ -1144,8 +1232,8 @@ Our app uses the service principal model for Lakebase access — the app authent
     <div class="check-item"><span class="check">&#10003;</span> Database Studio <span class="section-ref">2.6</span></div>
     <div class="check-item"><span class="check">&#10003;</span> Synced Tables (Lakehouse → Lakebase) <span class="section-ref">2.7</span></div>
     <div class="check-item"><span class="check">&#10003;</span> Sync modes (Snap/Trig/Continuous) <span class="section-ref">2.7</span></div>
-    <div class="check-item"><span class="check">&#10003;</span> Lakehouse Sync (Lakebase → Lakehouse) <span class="section-ref">2.8</span></div>
-    <div class="check-item"><span class="check">&#10003;</span> CDC / wal2delta / SCD Type 2 <span class="section-ref">2.8</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> Lakehouse Sync (Lakebase → Lakehouse) <span class="section-ref">2.8 / 02b</span></div>
+    <div class="check-item"><span class="check">&#10003;</span> CDC / wal2delta / SCD Type 2 <span class="section-ref">2.8 / 02b</span></div>
     <div class="check-item"><span class="check">&#10003;</span> Metrics dashboard (19 metrics) <span class="section-ref">2.9</span></div>
     <div class="check-item"><span class="check">&#10003;</span> Connection strings &amp; Connect dialog <span class="section-ref">2.10</span></div>
     <div class="check-item"><span class="check">&#10003;</span> OAuth &amp; native password auth <span class="section-ref">2.10</span></div>

@@ -82,6 +82,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./config
+
+# COMMAND ----------
+
 # DBTITLE 1,App Configuration
 import json
 import os
@@ -90,7 +94,7 @@ from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-APP_NAME = "delivery-slot-booking"
+# APP_NAME, PROJECT, DB_NAME come from the shared ./config notebook
 USER = w.current_user.me().user_name
 WORKSPACE_APP_PATH = f"/Workspace/Users/{USER}/apps/{APP_NAME}"
 
@@ -254,8 +258,7 @@ from databricks.sdk.errors import NotFound
 
 w = WorkspaceClient()
 
-PROJECT = "delivery-slot-booking"
-DB_NAME = "delivery_app"
+# PROJECT, DB_NAME come from the ./config %run at the top of this notebook
 
 # Wait for the service principal to be assigned (async after app creation)
 for _attempt in range(20):
@@ -322,10 +325,18 @@ grants = [
     f'GRANT USAGE ON SCHEMA public TO "{sp_client_id}"',
     f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{sp_client_id}"',
     f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{sp_client_id}"',
+    # Synced tables live in the SYNC_SCHEMA \u2014 grant read + include it on the search_path
+    # so the app's unqualified queries (SELECT ... FROM ekko) resolve to them.
+    f'GRANT USAGE ON SCHEMA {SYNC_SCHEMA} TO "{sp_client_id}"',
+    f'GRANT SELECT ON ALL TABLES IN SCHEMA {SYNC_SCHEMA} TO "{sp_client_id}"',
+    f'ALTER ROLE "{sp_client_id}" SET search_path = {SYNC_SCHEMA}, public',
 ]
 for g in grants:
-    cur.execute(g)
-    print(f"\u2713 {g[:70]}...")
+    try:
+        cur.execute(g)
+        print(f"\u2713 {g[:70]}...")
+    except Exception as e:
+        print(f"\u26a0 {g[:50]}... -> {str(e)[:80]}")
 
 cur.close()
 conn.close()
@@ -474,7 +485,7 @@ from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-PROJECT = "delivery-slot-booking"
+# PROJECT comes from the ./config %run at the top of this notebook
 
 # Get the app's service principal details
 app_info = w.api_client.do("GET", f"/api/2.0/apps/{APP_NAME}")
@@ -501,8 +512,7 @@ from databricks.sdk import WorkspaceClient
 
 w = WorkspaceClient()
 
-PROJECT = "delivery-slot-booking"
-DB_NAME = "delivery_app"
+# PROJECT, DB_NAME come from the ./config %run at the top of this notebook
 
 # Get connection details
 response = w.api_client.do(
@@ -556,10 +566,16 @@ grants = [
     f'GRANT USAGE ON SCHEMA public TO "{sp_client_id}"',
     f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{sp_client_id}"',
     f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{sp_client_id}"',
+    f'GRANT USAGE ON SCHEMA {SYNC_SCHEMA} TO "{sp_client_id}"',
+    f'GRANT SELECT ON ALL TABLES IN SCHEMA {SYNC_SCHEMA} TO "{sp_client_id}"',
+    f'ALTER ROLE "{sp_client_id}" SET search_path = {SYNC_SCHEMA}, public',
 ]
 for g in grants:
-    cur.execute(g)
-    print(f"\u2713 {g[:70]}...")
+    try:
+        cur.execute(g)
+        print(f"\u2713 {g[:70]}...")
+    except Exception as e:
+        print(f"\u26a0 {g[:50]}... -> {str(e)[:80]}")
 
 cur.close()
 conn.close()

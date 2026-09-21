@@ -110,8 +110,16 @@ datasets = [
 def bar_widget(name, dataset, x_field, y_field, title, x_scale="categorical"):
     # The widget's query MUST be named exactly "main_query" (the dataset link is
     # via `datasetName` inside the query, NOT the query name). Encodings then
-    # reference that single query implicitly. A dataset-suffixed query name gives
-    # "This widget reads from main_query, but its available queries are: ...".
+    # reference that single query implicitly.
+    #
+    # CRITICAL: the datasets below are ALREADY aggregated in their dataset SQL
+    # (GROUP BY ...). For pre-aggregated data the query must be `disaggregated:
+    # true` with simple field references (`col`). Setting `disaggregated: false`
+    # with non-aggregate field expressions makes Lakeview rewrite the single
+    # `main_query` into one query PER field, named `main_query/<dataset>` — which
+    # is exactly the error the demo hit: "This widget reads from main_query, but
+    # its available queries are: main_query/po_value_by_vendor". So keep this
+    # `True`. Also, the field `name` must match the encoding `fieldName` exactly.
     return {
         "widget": {
             "name": name,
@@ -123,7 +131,7 @@ def bar_widget(name, dataset, x_field, y_field, title, x_scale="categorical"):
                         {"name": x_field, "expression": f"`{x_field}`"},
                         {"name": y_field, "expression": f"`{y_field}`"},
                     ],
-                    "disaggregated": False,
+                    "disaggregated": True,
                 },
             }],
             "spec": {
@@ -158,6 +166,7 @@ dashboard_spec = {
     "pages": [{
         "name": "overview",
         "displayName": "Overview",
+        "pageType": "PAGE_TYPE_CANVAS",
         "layout": layout,
     }],
 }

@@ -346,6 +346,29 @@ def ensure_pk(table, cols, pk_name):
 
 ensure_pk(f"{FULL_SCHEMA}.ekko_gold", ["EBELN"], "ekko_gold_pk")
 ensure_pk(f"{FULL_SCHEMA}.ekpo_enriched", ["EBELN", "EBELP"], "ekpo_enriched_pk")
+
+# Governance for the ekko_gold gold table: table comment (stating what one row
+# means) + a comment on every column, matching the other gold tables from
+# 01_SAP_Data_Pipeline. This table is CREATE OR REPLACE'd above, so the comments
+# are re-applied on every run.
+EKKO_GOLD_GOVERNANCE = [
+    f"COMMENT ON TABLE {FULL_SCHEMA}.ekko_gold IS "
+    f"'Gold: SAP purchase order headers. One row = one purchase order (one EBELN), projected from silver_ekko with a primary key on EBELN. Synced to Lakebase (as ekko) for the delivery-booking app.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekko_gold.EBELN IS 'SAP purchase order number (PO header key). Primary key of this table.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekko_gold.BUKRS IS 'SAP company code that owns the purchase order.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekko_gold.EKORG IS 'SAP purchasing organization responsible for the PO.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekko_gold.BEDAT IS 'PO document (creation) date from the SAP header.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekko_gold.LIFNR IS 'SAP vendor / supplier number for the purchase order.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekko_gold.BSART IS 'SAP purchasing document type (e.g. NB standard, UB stock transport, FO framework order).'",
+    f"ALTER TABLE {FULL_SCHEMA}.ekko_gold SET TAGS ('system.certification_status' = 'certified')",
+]
+for stmt in EKKO_GOLD_GOVERNANCE:
+    try:
+        spark.sql(stmt)
+        print(f"  ✓ {stmt[:70]}...")
+    except Exception as e:
+        print(f"  ⚠ Skipped ({str(e)[:60]}...)")
+
 print("Sync sources ready.")
 
 # COMMAND ----------

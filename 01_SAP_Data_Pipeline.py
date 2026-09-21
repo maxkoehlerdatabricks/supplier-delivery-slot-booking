@@ -246,22 +246,53 @@ display(booking_funnel.orderBy("status"))
 
 # DBTITLE 1,Comments, tags, and grants on gold tables
 GOVERNANCE_SQL = [
-    # Table comments
+    # ── Table comments ───────────────────────────────────────────────────────
+    # Each table comment states what ONE ROW means (the grain), so a data
+    # consumer in Catalog Explorer / Genie knows how to read the table.
     f"COMMENT ON TABLE {FULL_SCHEMA}.ekpo_enriched IS "
-    f"'Gold: SAP purchase order line items enriched with header data and computed line value. Synced to Lakebase for the delivery-booking app.'",
+    f"'Gold: enriched SAP purchase order line items. One row = one PO line item (one EBELN + EBELP), joined to its PO header and carrying the computed extended line value. Synced to Lakebase for the delivery-booking app.'",
     f"COMMENT ON TABLE {FULL_SCHEMA}.slot_utilization IS "
-    f"'Gold: dock slot capacity vs. reservations, aggregated by dock and date. Feeds the AI/BI dashboard.'",
+    f"'Gold: loading-dock slot utilization. One row = one loading dock on one calendar date, with that dock-day''s total capacity, reservations, and derived utilization. Feeds the AI/BI dashboard.'",
     f"COMMENT ON TABLE {FULL_SCHEMA}.booking_funnel IS "
-    f"'Gold: delivery bookings by status with associated PO value. Feeds the AI/BI dashboard.'",
-    # Column comments (a representative sample — the business-critical ones)
-    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.EBELN IS 'SAP purchase order number (PO header key).'",
-    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.LIFNR IS 'SAP vendor / supplier number.'",
-    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.MATNR IS 'SAP material number (LiDAR component).'",
-    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.LINE_VALUE IS 'Computed extended value: MENGE (qty) * NETPR (unit price), in EUR.'",
-    # Certification tag — uses the governed `system.certification_status` policy
-    # (allowed value: 'certified'). Non-governed keys like a custom 'layer'/'domain'
-    # are blocked on workspaces that enforce tag policies, so we mark the layer/domain
-    # in the table comments above and certify with the governed tag here.
+    f"'Gold: delivery-booking funnel. One row = one booking status (requested / confirmed / checked_in / completed / cancelled), with the count of bookings, distinct vendors, and total associated PO value in that status. Feeds the AI/BI dashboard.'",
+
+    # ── Column comments: ekpo_enriched (all columns) ─────────────────────────
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.EBELN IS 'SAP purchase order number (PO header key). Part of the (EBELN, EBELP) primary key.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.EBELP IS 'SAP purchase order line item number within the PO. Part of the (EBELN, EBELP) primary key.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.BUKRS IS 'SAP company code that owns the purchase order.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.EKORG IS 'SAP purchasing organization responsible for the PO.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.BEDAT IS 'PO document (creation) date from the SAP header.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.LIFNR IS 'SAP vendor / supplier number for the purchase order.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.BSART IS 'SAP purchasing document type (e.g. NB standard, UB stock transport, FO framework order).'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.MATNR IS 'SAP material number (LiDAR component) ordered on this line.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.WERKS IS 'SAP plant that receives the material for this line.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.MENGE IS 'Ordered quantity for this PO line item.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.MEINS IS 'Base unit of measure for the ordered quantity (e.g. EA = each).'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.NETPR IS 'Net unit price per base unit of measure, in EUR.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.ELIKZ IS 'Delivery-completed indicator: ''X'' when the line is fully delivered, else blank.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.ekpo_enriched.LINE_VALUE IS 'Computed extended line value: MENGE (quantity) * NETPR (unit price), in EUR.'",
+
+    # ── Column comments: slot_utilization (all columns) ──────────────────────
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.slot_date IS 'Calendar date of the loading-dock slots aggregated in this row.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.dock_id IS 'Loading-dock identifier this row aggregates (one row per dock per date).'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.plant_id IS 'Plant that the loading dock belongs to.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.total_capacity IS 'Sum of slot capacities (trucks) for this dock on this date.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.total_reserved IS 'Sum of reserved slot counts for this dock on this date.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.slot_count IS 'Number of individual time-window slots for this dock on this date.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.utilization_pct IS 'Utilization percentage = total_reserved / total_capacity * 100, rounded to 1 decimal.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.slot_utilization.available_capacity IS 'Remaining free capacity = total_capacity - total_reserved.'",
+
+    # ── Column comments: booking_funnel (all columns) ────────────────────────
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.booking_funnel.status IS 'Delivery-booking status this row aggregates: requested, confirmed, checked_in, completed, or cancelled.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.booking_funnel.bookings IS 'Count of distinct delivery bookings currently in this status.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.booking_funnel.vendors IS 'Count of distinct vendors with a booking in this status.'",
+    f"COMMENT ON COLUMN {FULL_SCHEMA}.booking_funnel.total_po_value IS 'Sum of associated PO line value (LINE_VALUE, EUR) across the bookings in this status.'",
+
+    # ── Certification tag ─────────────────────────────────────────────────────
+    # Uses the governed `system.certification_status` policy (allowed value:
+    # 'certified'). Non-governed keys like a custom 'layer'/'domain' are blocked
+    # on workspaces that enforce tag policies, so we mark the layer/domain in the
+    # table comments above and certify with the governed tag here.
     f"ALTER TABLE {FULL_SCHEMA}.ekpo_enriched SET TAGS ('system.certification_status' = 'certified')",
     f"ALTER TABLE {FULL_SCHEMA}.slot_utilization SET TAGS ('system.certification_status' = 'certified')",
     f"ALTER TABLE {FULL_SCHEMA}.booking_funnel SET TAGS ('system.certification_status' = 'certified')",
@@ -318,9 +349,13 @@ display(
 # MAGIC | Gold | `ekpo_enriched`, `slot_utilization`, `booking_funnel` |
 # MAGIC
 # MAGIC ### Governance applied
-# MAGIC - Table & column comments on all gold tables
-# MAGIC - `layer` / `certified` / `domain` tags
+# MAGIC - Table comments on all gold tables (each states what one row means)
+# MAGIC - A comment on **every column** of every gold table
+# MAGIC - `system.certification_status = certified` tag on each gold table
 # MAGIC - `SELECT` grants to `account users`
+# MAGIC
+# MAGIC (`ekko_gold` — the fourth gold table, built in `02_Lakebase_Setup` as the sync
+# MAGIC source for the Lakebase `ekko` table — is commented and certified there.)
 # MAGIC
 # MAGIC ### Lineage
 # MAGIC Open any gold table in **Catalog Explorer → Lineage** to see the full

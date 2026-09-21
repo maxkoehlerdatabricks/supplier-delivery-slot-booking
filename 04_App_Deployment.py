@@ -156,11 +156,29 @@ import shutil
 import os
 import re
 
-source_dir = f"/Workspace/Users/{USER}/supplier-delivery-slot-booking/app"
+# Derive the app source from THIS notebook's own location, so the run works no
+# matter what the repo/Git-folder was cloned as (e.g. `...-repo`). The `app/`
+# dir is a sibling of this notebook. Fall back to the conventional path.
+try:
+    _nb_path = (
+        dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+        .notebookPath().get()
+    )
+    _repo_root = os.path.dirname("/Workspace" + _nb_path)
+    source_dir = os.path.join(_repo_root, "app")
+    if not os.path.exists(source_dir):
+        source_dir = f"/Workspace/Users/{USER}/supplier-delivery-slot-booking/app"
+except Exception:
+    source_dir = f"/Workspace/Users/{USER}/supplier-delivery-slot-booking/app"
+
 dest_dir = WORKSPACE_APP_PATH
 
 if not os.path.exists(source_dir):
-    raise FileNotFoundError(f"App source not found at {source_dir}")
+    raise FileNotFoundError(
+        f"App source not found at {source_dir}. Import the repo so this notebook "
+        f"and the app/ folder sit side by side."
+    )
+print(f"App source dir:   {source_dir}")
 
 if os.path.exists(dest_dir):
     shutil.rmtree(dest_dir)
